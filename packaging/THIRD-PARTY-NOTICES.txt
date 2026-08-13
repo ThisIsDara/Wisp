@@ -1,0 +1,49 @@
+=====================================================================
+wisp — Third-Party Notices
+Generated: 2026-08-11 — Product version: 0.1.0
+=====================================================================
+
+1. Qt (LGPLv3)
+--------------
+This application uses Qt version 6.11.1, (c) The Qt Company Ltd and
+contributors, licensed under the GNU Lesser General Public License
+version 3 (LGPLv3).
+
+Qt is dynamically linked: the application and Qt remain separate
+works under the LGPL. The user may replace the Qt libraries and
+re-link this application against their own Qt build; the relink
+verification test is a Phase 6 release gate (see
+LGPL-COMPLIANCE.md).
+
+2. Qt modules in use
+--------------------
+Qt Core
+Qt Gui
+Qt Quick
+Qt QML
+
+(These match the Qt components linked by the application's build
+configuration — see CMakeLists.txt find_package/Qt components.)
+
+3. Source offer
+---------------
+wisp uses unmodified Qt 6.11.1 open-source binaries (dynamic linking).
+The complete corresponding Qt 6.11.1 source code is available from:
+  - https://code.qt.io          (git repository, tag v6.11.1)
+  - https://www.qt.io/download-open-source  (source archives)
+
+Written offer: the wisp maintainers will provide the corresponding Qt
+source on request, valid for three (3) years from the date of
+distribution, per LGPLv3 section 6(d). Requests may be filed via the
+project's release/issue tracker.
+
+4. Microsoft Visual C++ Runtime
+-------------------------------
+wisp is built with MSVC; the VC++ runtime is distributed per the
+Microsoft Visual C++ Redistributable license via VC_redist.x64.exe
+(shipped by the installer, Phase 6). windeployqt-copied compiler
+DLLs are NOT used for redistribution.
+
+=====================================================================
+Compliance evidence: see packaging/LGPL-COMPLIANCE.md and
+packaging/verify-lgpl.ps1 (dumpbin /DEPENDENTS + relink test).

@@ -1,0 +1,88 @@
+name: release
+
+# Builds the release, assembles the NSIS installer, submits the artifacts to
+# SignPath Foundation for code signing (see CODE_SIGNING_POLICY.md), and
+# publishes a GitHub Release with SHA256SUMS. Trigger by pushing a v* tag.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Qt 6.11.1 MSVC x64 (adds Qt bin to PATH via set-paths)
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.11.1"
+          arch: win64_msvc2022_64
+          cache: true
+
+      # vcvars64 environment for CMake/Ninja
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      # NSIS for the installer (build-installer.ps1 falls back to PATH)
+      - name: install NSIS
+        run: choco install nsis --no-progress -y
+
+      - name: build + deploy + installer
+        shell: pwsh
+        run: ./packaging/build-installer.ps1 -Config release
+
+      # SignPath signs a single zip artifact; wisp.exe is embedded inside
+      # wisp-setup.exe, so the artifact config (.signpath/) signs both.
+      - name: package unsigned artifacts
+        shell: pwsh
+        run: |
+          $d = "build\deploy"
+          Compress-Archive -Path "$d\wisp\wisp.exe", "$d\wisp-setup.exe" -DestinationPath "$d\unsigned.zip" -Force
+
+      - name: upload unsigned artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          path: build/deploy/unsigned.zip
+
+      - name: submit signing request
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: build/signed
+
+      - name: assemble release assets
+        shell: pwsh
+        run: |
+          $assets = "build\release-assets"
+          New-Item -ItemType Directory -Force -Path $assets | Out-Null
+          if (Test-Path "build\signed") {
+            $z = Get-ChildItem "build\signed" -Filter *.zip | Select-Object -First 1
+            if ($z) { Expand-Archive -Path $z.FullName -DestinationPath $assets -Force }
+          }
+          if (-not (Test-Path "$assets\wisp.exe")) { Copy-Item "build\deploy\wisp\wisp.exe" $assets }
+          if (-not (Test-Path "$assets\wisp-setup.exe")) { Copy-Item "build\deploy\wisp-setup.exe" $assets }
+          Get-ChildItem $assets -File | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+            "$h  $($_.Name)" | Out-File "$assets\SHA256SUMS" -Append -Encoding ascii
+          }
+          Get-ChildItem $assets
+
+      - name: publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" "build\release-assets\wisp.exe" "build\release-assets\wisp-setup.exe" "build\release-assets\SHA256SUMS" --generate-notes

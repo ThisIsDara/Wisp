@@ -1,0 +1,142 @@
+#pragma once
+
+#include <QAbstractListModel>
+#include <QVector>
+
+#include <functional>
+
+#include "core/AppEntry.h"
+#include "core/FuzzyMatcher.h"
+
+// QML consumes this via a context property in 03-05. Rendered rows are the
+// permutation m_order over the always-alphabetical m_entries.
+//
+// MatchRangesRole shape (03-05 Phase-5 highlight contract): a QVariantList
+// of two-int lists, [{start, length}, ...] — one entry per contiguous matched
+// run, positions into the ORIGINAL displayName. Read as ranges[i][0]/[1].
+//
+// QML contracts (03-05): roleNames expose displayName/subtitle/matchRanges/
+// aumid to the delegate; selectionChanged NOTIFY keeps ListView's
+// `currentIndex: resultsModel.selectedIndex` binding live (single source of
+// selection truth — hover and keyboard render through the same highlight).
+class ResultsModel : public QAbstractListModel
+{
+    Q_OBJECT
+    Q_PROPERTY(QString query READ query NOTIFY queryChanged) // 03-05 empty-state copy
+    Q_PROPERTY(int selectedIndex READ selectedIndex NOTIFY selectionChanged) // LAUN-05 nav binding
+    Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged) // 05.1: show-hidden mode toggle
+    Q_PROPERTY(int hiddenCount READ hiddenCount NOTIFY hiddenCountChanged) // 05.1: footer visibility (rule- AND user-hidden)
+
+public:
+    enum Roles {
+        DisplayNameRole = Qt::UserRole + 1,
+        SubtitleRole,
+        MatchRangesRole,
+        AumidRole,
+        IsFolderRole, // D-04: QML folder glyph — true for folder file rows only
+        IconKeyRole,  // 05-04: image://wispicons/{id} — Lnk 'path;index', File 'path:path', Uwp 'uwp:PFN|appId'
+        IsHiddenRole, // 05.1: QML dims hidden rows via model.isHidden
+    };
+
+    explicit ResultsModel(QObject *parent = nullptr);
+
+    QHash<int, QByteArray> roleNames() const override;
+
+    // Full catalog snapshot (03-03 signals → this). Resets query to "" and selection to 0.
+    void setEntries(QVector<AppEntry> entries);
+    // Query → filter+rank via FuzzyMatcher::score, sort score desc then displayName asc (D-05).
+    // Empty query → all entries + manual picks (CUR-04/D-14) interleaved
+    // alphabetically (D-01), selection index 0 (D-02).
+    Q_INVOKABLE void setQuery(const QString &query);
+    QString query() const; // for the 03-05 "No results for \"{query}\"" interpolation
+
+    int rowCount(const QModelIndex &parent = {}) const override;
+    QVariant data(const QModelIndex &idx, int role) const override;
+
+    // Selection (LAUN-05): clamped to [0, rowCount-1]; delta ±1 for ↑/↓,
+    // ±kVisibleRows (7) for PageUp/PageDown; Home=0 / End=count-1.
+    Q_INVOKABLE int selectedIndex() const;
+    Q_INVOKABLE void moveSelection(int delta);
+    Q_INVOKABLE void selectIndex(int index);
+
+    // D-12 freeze seed: value copy of the entry at the CURRENT selection
+    // (03-04's launchSelected() calls this at keypress).
+    AppEntry snapshotSelected() const;
+
+    // ── 05.1 curation surface (CUR-02/CUR-03/CUR-04) ──
+    // Hide/unhide the SELECTED row: app and manual-pick rows (File → no-op,
+    // CUR-04 escape-hatch guard — only TRANSIENT index file rows are
+    // never-hideable; fromAdded rows are curated like apps, 2026-08-12).
+    // hideSelected MARKS the entry hidden (hidden=true) — it stays in
+    // m_entries/m_addedEntries so hiddenCount()/Show-hidden/Unhide work
+    // in-session; unhideSelected flips it back. Live marking with the query
+    // PRESERVED — NEVER a catalog rebuild / setEntries (D-08 query reset,
+    // research Pitfall 3).
+    Q_INVOKABLE void hideSelected();
+    Q_INVOKABLE void unhideSelected();   // writes the shown override via the seam
+    Q_INVOKABLE void setShowHidden(bool on); // rebuilds display order (buildAppOrder branch)
+    int hiddenCount() const;                 // rule- AND user-hidden together
+    bool showHidden() const;
+    // Persistence seam — production binds CurationStore (main.cpp 05.1-04);
+    // tests inject spies. UI thread only (SettingsStore precedent).
+    using HideStore = std::function<void(const QString &id, bool hidden)>;
+    void setHideStore(HideStore fn);
+
+    // ── Phase-4 file results (04-04): D-01..D-07, D-14, D-15 ──
+    // setFileResults(generation, query, files): UI-thread delivery from the
+    // file-search coordinator (04-05 wiring). Stores the latest generation,
+    // DROPS older ones (D-15 defense in depth — FileSearch also drops).
+    // WR-03: results computed for query text other than the CURRENT m_query
+    // are dropped too — the generation proves recency, the text proves
+    // relevance (a stale-text result can carry the current generation when it
+    // lands inside the debounce window). Re-merges immediately when a query
+    // is active; an EMPTY-query delivery is the D-14 added-only snapshot — it
+    // refills the m_addedEntries channel and rebuilds the default list (apps
+    // + manual picks interleaved), so a freshly added executable appears the
+    // instant the pick dialog closes. The call must arrive on the UI thread
+    // (documented contract — the watcher completion in FileSearch guarantees it).
+    void setFileResults(quint64 generation, const QString &query, QVector<AppEntry> files);
+
+signals:
+    void queryChanged(const QString &query);
+    // Emitted when the clamped selection actually changes — the QML ListView
+    // binding (`currentIndex: resultsModel.selectedIndex`) depends on it.
+    void selectionChanged();
+    void showHiddenChanged();
+    void hiddenCountChanged();  // 05.1: QML footer "Show hidden (N)" visibility
+
+private:
+    // Display row: resolved by data()/snapshotSelected() against m_entries
+    // (fromFiles == fromAdded == false), m_fileEntries (fromFiles == true),
+    // or m_addedEntries (fromAdded == true — the D-14 default-list channel).
+    struct Row { int entryIndex; bool fromFiles; bool fromAdded = false; };
+    const AppEntry &entryAt(const Row &row) const;
+
+    // App-only filter+rank (the 03-05 loop verbatim) filling m_order/m_ranges;
+    // setQuery's empty branch calls it for the full alphabetical list (D-14).
+    void buildAppOrder();
+    // Merges m_fileEntries into m_order/m_ranges by score desc then displayName
+    // asc (D-01/D-05), caps file rows at kMaxFileRows (D-03), and applies the
+    // kPathMatchScore base tier for path-only matches (D-07).
+    void mergeFiles();
+
+    QVector<AppEntry> m_entries;       // always sorted alphabetically (case-insensitive)
+    QVector<AppEntry> m_fileEntries;   // latest accepted file set (D-15 generation-guarded)
+    QVector<AppEntry> m_addedEntries;  // D-14 default-list channel: latest accepted
+                                       // added-only snapshot (manual picks, CUR-04),
+                                       // kept sorted for the buildAppOrder interleave
+    // WR-03: MONOTONIC across catalog refreshes — setEntries() clears the file
+    // entries but NEVER resets this counter (a reset would let any in-flight
+    // generation pass the model-side guard; FileSearch's counter keeps
+    // climbing independently).
+    quint64 m_fileGeneration = 0;      // D-15 model-side stale guard
+    QString m_query;
+    QVector<Row> m_order;                 // merged display order (score desc, alpha asc)
+    QVector<FuzzyMatcher::Result> m_ranges; // match results aligned with m_order (O(1) in data())
+    int m_selected = 0;
+    bool m_showHidden = false;   // 05.1: show-hidden mode — reveals dimmed rows for Unhide
+    HideStore m_hideStore;       // 05.1: persistence seam (CurationStore in production, spies in tests)
+    static constexpr int kVisibleRows = 7;   // 640×400 shell ≈ 7 rows of 44px (UI-SPEC geometry)
+    static constexpr int kMaxFileRows = 5;   // D-03 file cap per query — apps are never dropped
+    static constexpr int kPathMatchScore = 100; // D-07 base tier below every name match
+};
