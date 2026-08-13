@@ -85,4 +85,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
-          gh release create "$env:GITHUB_REF_NAME" "build\release-assets\wisp.exe" "build\release-assets\wisp-setup.exe" "build\release-assets\SHA256SUMS" --generate-notes
+          $assets = "build\release-assets\wisp.exe", "build\release-assets\wisp-setup.exe", "build\release-assets\SHA256SUMS"
+          $notes = "RELEASES\$($env:GITHUB_REF_NAME).md"
+          if (Test-Path $notes) {
+            gh release create "$env:GITHUB_REF_NAME" @assets --notes-file $notes
+          } else {
+            gh release create "$env:GITHUB_REF_NAME" @assets --generate-notes
+          }
