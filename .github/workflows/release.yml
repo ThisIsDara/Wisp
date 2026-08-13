@@ -39,9 +39,22 @@ jobs:
       # vcvars64 environment for CMake/Ninja
       - uses: ilammy/msvc-dev-cmd@v1
 
-      # NSIS for the installer (build-installer.ps1 falls back to PATH)
-      - name: install NSIS
-        run: choco install nsis --no-progress -y
+      # NSIS portable into build/tools/NSIS (build-installer.ps1's fallback
+      # location). choco's nsis package doesn't shim makensis onto PATH.
+      - name: install NSIS (portable)
+        shell: pwsh
+        run: |
+          $dir = "build\tools\NSIS"
+          if (-not (Test-Path "$dir\makensis.exe")) {
+            $rel = Invoke-RestMethod "https://api.github.com/repos/nsis-dev/nsis/releases/latest"
+            $asset = $rel.assets | Where-Object { $_.name -like "nsis-*.zip" } | Select-Object -First 1
+            New-Item -ItemType Directory -Force -Path "build\tools" | Out-Null
+            Invoke-WebRequest $asset.browser_download_url -OutFile "build\tools\nsis.zip"
+            Expand-Archive "build\tools\nsis.zip" -DestinationPath "build\tools\nsis-tmp" -Force
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            Copy-Item "build\tools\nsis-tmp\*\*" $dir -Recurse -Force
+          }
+          & "$dir\makensis.exe" /VERSION
 
       - name: build + deploy + installer
         shell: pwsh
