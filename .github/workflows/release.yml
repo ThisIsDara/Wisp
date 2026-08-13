@@ -48,7 +48,12 @@ jobs:
           $dir = "build\tools\NSIS"
           if (-not (Test-Path "$dir\makensis.exe")) {
             New-Item -ItemType Directory -Force -Path "build\tools" | Out-Null
-            Invoke-WebRequest "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.12/nsis-3.12.zip" -OutFile "build\tools\nsis.zip"
+            $page = (Invoke-WebRequest "https://sourceforge.net/projects/nsis/files/NSIS%203/3.12/nsis-3.12.zip/download" -UseBasicParsing -TimeoutSec 30).Content
+            $m = [regex]::Match($page, 'data-direct-url="([^"]+)"')
+            if (-not $m.Success) { throw "NSIS download page: signed URL not found" }
+            Invoke-WebRequest ([System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value)) -OutFile "build\tools\nsis.zip" -UseBasicParsing -TimeoutSec 300
+            $magic = [System.IO.File]::ReadAllBytes((Resolve-Path "build\tools\nsis.zip"))
+            if (-not ($magic[0] -eq 0x50 -and $magic[1] -eq 0x4B)) { throw "nsis.zip is not a zip archive" }
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
             tar -xf "build\tools\nsis.zip" -C "build\tools"
             Copy-Item "build\tools\nsis-3.12\*" $dir -Recurse -Force
