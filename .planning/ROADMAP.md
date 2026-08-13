@@ -151,3 +151,13 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 5. Theme & Visual Polish | 5/5 | Complete   | 2026-08-10 |
 | 05.1. Catalog Curation | 4/4 | COMPLETE (user-approved, code review + verification passed, ctest 17/17) | 2026-08-11 |
 | 6. Tray, Settings, Autostart & Packaging | 5/5 | Complete   | 2026-08-11 |
+
+### Phase 7: Self-Managed File Scan: user-selected directory/partition scanning for executables, replacing Windows Search
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 7 to break down)
