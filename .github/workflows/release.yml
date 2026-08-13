@@ -39,26 +39,10 @@ jobs:
       # vcvars64 environment for CMake/Ninja
       - uses: ilammy/msvc-dev-cmd@v1
 
-      # NSIS portable into build/tools/NSIS (build-installer.ps1's fallback
-      # location). choco's nsis package doesn't shim makensis onto PATH, and
-      # NSIS publishes only on SourceForge (no GitHub releases) — pinned 3.12.
-      - name: install NSIS (portable)
-        shell: pwsh
-        run: |
-          $dir = "build\tools\NSIS"
-          if (-not (Test-Path "$dir\makensis.exe")) {
-            New-Item -ItemType Directory -Force -Path "build\tools" | Out-Null
-            $page = (Invoke-WebRequest "https://sourceforge.net/projects/nsis/files/NSIS%203/3.12/nsis-3.12.zip/download" -UseBasicParsing -TimeoutSec 30).Content
-            $m = [regex]::Match($page, 'data-direct-url="([^"]+)"')
-            if (-not $m.Success) { throw "NSIS download page: signed URL not found" }
-            Invoke-WebRequest ([System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value)) -OutFile "build\tools\nsis.zip" -UseBasicParsing -TimeoutSec 300
-            $magic = [System.IO.File]::ReadAllBytes((Resolve-Path "build\tools\nsis.zip"))
-            if (-not ($magic[0] -eq 0x50 -and $magic[1] -eq 0x4B)) { throw "nsis.zip is not a zip archive" }
-            New-Item -ItemType Directory -Force -Path $dir | Out-Null
-            tar -xf "build\tools\nsis.zip" -C "build\tools"
-            Copy-Item "build\tools\nsis-3.12\*" $dir -Recurse -Force
-          }
-          & "$dir\makensis.exe" /VERSION
+      # NSIS via choco; build-installer.ps1 locates makensis under Program
+      # Files (x86)\NSIS, chocolatey lib, or a portable copy.
+      - name: install NSIS
+        run: choco install nsis --no-progress -y
 
       - name: build + deploy + installer
         shell: pwsh

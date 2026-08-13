@@ -47,8 +47,15 @@ if (-not $makensis) {
     $candidates = @(
         (Join-Path $env:LOCALAPPDATA "Programs\NSIS\makensis.exe"),
         (Join-Path $env:ProgramFiles "NSIS\makensis.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "NSIS\makensis.exe"),
         (Join-Path $repoRoot "build\tools\NSIS\makensis.exe")   # portable NSIS fallback
     )
+    $chocoLibs = Get-ChildItem "C:\ProgramData\chocolatey\lib" -Directory -Filter "nsis*" -ErrorAction SilentlyContinue
+    foreach ($d in $chocoLibs) {
+        $found = Get-ChildItem $d.FullName -Recurse -Filter "makensis.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($found) { $candidates += $found.FullName }
+    }
     foreach ($c in $candidates) {
         if ($c -and (Test-Path $c)) { $makensis = Get-Item $c; break }
     }
