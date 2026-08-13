@@ -22,7 +22,14 @@ $env:Path = "$QtBinPath;$env:Path"
 
 $vcvars = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
 if (-not (Test-Path $vcvars)) {
-    throw "vcvars64.bat not found at $vcvars - install VS 2022 'Desktop development with C++'"
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $vswhere) {
+        $vsRoot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+        if ($vsRoot) { $vcvars = Join-Path $vsRoot "VC\Auxiliary\Build\vcvars64.bat" }
+    }
+}
+if (-not (Test-Path $vcvars)) {
+    throw "vcvars64.bat not found - install VS 2022 'Desktop development with C++'"
 }
 
 if ($Config -ne "dev" -and $Config -ne "release") {
