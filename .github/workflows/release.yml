@@ -49,9 +49,9 @@ jobs:
           if (-not (Test-Path "$dir\makensis.exe")) {
             New-Item -ItemType Directory -Force -Path "build\tools" | Out-Null
             Invoke-WebRequest "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.12/nsis-3.12.zip" -OutFile "build\tools\nsis.zip"
-            Expand-Archive "build\tools\nsis.zip" -DestinationPath "build\tools\nsis-tmp" -Force
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
-            Copy-Item "build\tools\nsis-tmp\*\*" $dir -Recurse -Force
+            tar -xf "build\tools\nsis.zip" -C "build\tools"
+            Copy-Item "build\tools\nsis-3.12\*" $dir -Recurse -Force
           }
           & "$dir\makensis.exe" /VERSION
 
