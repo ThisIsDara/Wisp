@@ -738,6 +738,48 @@ Window {
                 }
             }
 
+            // ── D-04 no-roots prompt: the empty-QUERY branch of the status
+            // row. Gates: no query typed AND file backend troubled (no roots
+            // / error / scanning) AND no rows. Mutually exclusive by
+            // construction: the empty-state (line 708) is gated on
+            // fileSearch.indexerOk, the status row (line 752) on
+            // query !== "" — this branch owns query === "".
+            // Copy is single-homed in FileSearch::statusText (verbatim).
+            Item {
+                id: noRootsPrompt
+                anchors.fill: resultsView
+                visible: resultsModel.query === "" && !fileSearch.indexerOk
+                         && resultsView.count === 0
+                Column {
+                    anchors.centerIn: parent
+                    spacing: Theme.spaceXs
+                    // D-11: 16px Segoe MDL2 Assets glyph above the message —
+                    // U+E721 "Search" (declared; present on Win10/11). Muted
+                    // textSecondary, never accent (accent reserved-list).
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "\uE721"
+                        font.family: "Segoe MDL2 Assets"
+                        font.pixelSize: Theme.emptyStateGlyphSize
+                        color: Theme.emptyStateGlyphColor
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: fileSearch.statusText
+                        font.pixelSize: Theme.fontSizeTitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textSecondary
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "Press Esc to close"
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textSecondary
+                    }
+                }
+            }
+
             // ── Indexer status row (D-17/D-18, RESEARCH §9) — non-selectable
             // overlay (never a model row, never focusable); renders the
             // verbatim locked copy owned by FileSearch.cpp. Visible only while
