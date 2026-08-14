@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 6 UI-SPEC approved
-last_updated: "2026-08-14T00:47:03.247Z"
-last_activity: 2026-08-14 -- Phase 07 planning complete
+last_updated: "2026-08-14T00:48:24.219Z"
+last_activity: 2026-08-14 -- Phase 07 execution started
 progress:
   total_phases: 8
   completed_phases: 7
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-09)
 
 **Core value:** The launcher must open and launch in under a second with buttery-smooth animation. Speed and feel are the product.
-**Current focus:** Phase 06 — tray-settings-autostart-packaging
+**Current focus:** Phase 07 — Self-Managed File Scan
 
 ## Current Position
 
-Phase: 06 (tray-settings-autostart-packaging) — EXECUTING
+Phase: 07 (Self-Managed File Scan) — EXECUTING
 Plan: 1 of 5
-Status: Ready to execute
-Last activity: 2026-08-14 -- Phase 07 planning complete
+Status: Executing Phase 07
+Last activity: 2026-08-14 -- Phase 07 execution started
 
 Phase history: Phase 02 (global-hotkey-toggle) COMPLETE (3/3 waves, ctest 5/5); Phase 03 (app search & result model) COMPLETE (5/5 waves, ctest 10/10, vertical slice user-approved: calc→Calculator #1, instant typing/nav/launch, UAC-cancel quiet, UWP admin-refusal hint, centered opens, constant-speed key scrolling — user-reported defects all resolved: top-left placement, Esc/click-away after first close, query persistence, hover vs key auto-repeat); Phase 04 (file search) COMPLETE (5/5 plans, ctest 13/13, human-approved 8/8: merged .exe/folder rows, Enter launch, Ctrl+Enter Explorer reveal, Ctrl+Shift+Enter silent-normal, folder ▸ glyph, Add executable… persistence, indexer-disabled status row, debounce feel; checkpoint note added vibrant left selection-bar indicator); Phase 05.1 (catalog curation) COMPLETE (4/4 plans, ctest 17/17, user-approved: curated allowlist default, Ctrl+H hide, Show hidden (N) footer, right-click Hide/Unhide menu, persistence, Add-executable escape hatch; code review 2 HIGH/3 MEDIUM/5 LOW all fixed; verification passed)
 
