@@ -35,6 +35,7 @@ private slots:
     void saveCreatesMissingParentDir();
     void corruptIndexFileLoadsEmpty();
     void wipeThenRescanRepopulates();
+    void toEntriesStripsExe_20260815();
     void concurrentReadsDuringWalk();
 
 private:
@@ -375,6 +376,29 @@ void TstIndex::wipeThenRescanRepopulates()
     index.apply(outcome);
     QCOMPARE(index.entryCount(), 3);
     QCOMPARE(index.queryCandidates(QStringLiteral("tool")).size(), 1);
+}
+
+void TstIndex::toEntriesStripsExe_20260815()
+{
+    // 2026-08-15: File-row titles drop the ".exe" extension — the default
+    // list shows "Wow", not "Wow.exe" (the user-facing title change). Only
+    // .exe is stripped, case-insensitively, from the basename; non-.exe names
+    // and folder rows keep their filename. targetPath is never touched.
+    const QVector<FileIndex::IndexEntry> candidates = {
+        { QStringLiteral("C:\\Games\\WoW.exe"), {}, false },
+        { QStringLiteral("C:\\tools\\Tool.EXE"), {}, false },
+        { QStringLiteral("C:\\docs\\report.pdf"), {}, false },
+        { QStringLiteral("C:\\Games"), {}, true },
+    };
+    const QVector<AppEntry> out = FileIndex::toEntries(candidates, 10);
+    QCOMPARE(out.size(), 4);
+    QCOMPARE(out.at(0).displayName, QStringLiteral("WoW"));
+    QCOMPARE(out.at(1).displayName, QStringLiteral("Tool"));   // case-insensitive
+    QCOMPARE(out.at(2).displayName, QStringLiteral("report.pdf")); // non-.exe kept
+    QCOMPARE(out.at(3).displayName, QStringLiteral("Games"));  // folder basename kept
+    QCOMPARE(out.at(0).source, AppEntry::Source::File);
+    QCOMPARE(out.at(0).targetPath, QStringLiteral("C:\\Games\\WoW.exe")); // path intact
+    QCOMPARE(out.at(3).isFolder, true);
 }
 
 void TstIndex::concurrentReadsDuringWalk()

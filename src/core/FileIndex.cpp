@@ -335,7 +335,7 @@ QVector<AppEntry> FileIndex::toEntries(const QVector<IndexEntry> &candidates, in
     for (int i = 0; i < n; ++i) {
         AppEntry e;
         e.source = AppEntry::Source::File;
-        e.displayName = QFileInfo(candidates[i].path).fileName(); // derived, never stored
+        e.displayName = fileEntryTitle(candidates[i].path); // derived, never stored (.exe stripped, 2026-08-15)
         e.targetPath = candidates[i].path;
         e.isFolder = candidates[i].isFolder;
         out.append(e);

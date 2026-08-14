@@ -5,10 +5,26 @@
 // aggregated/deduped by 03-03, launched by 03-04, rendered by 03-05.
 // iconRef: GetIconLocation output / UWP logo ref — Phase 5 consumes it, unused here.
 // Phase-4 extension (04-01): Source::File rows come from the Windows Search
-// pipeline (04-02). File semantics: displayName = filename (title), targetPath
-// = full path (subtitle + launch + Ctrl+Enter Explorer reveal), isFolder =
-// D-04 folder rows (glyph in the monogram, opens in Explorer). arguments/aumid
-// stay empty for File rows.
+// pipeline (04-02). File semantics: displayName = filename minus ".exe"
+// (title — see fileEntryTitle), targetPath = full path (subtitle + launch +
+// Ctrl+Enter Explorer reveal), isFolder = D-04 folder rows (glyph in the
+// monogram, opens in Explorer). arguments/aumid stay empty for File rows.
+
+// 2026-08-15: the display title for a File row — the filename WITHOUT the
+// ".exe" extension ("Wow.exe" → "Wow"). Used at the two File-row entry-build
+// sites (FileIndex::toEntries, LaunchHistory::appendEntry); never stored. Only
+// the .exe extension is stripped (case-insensitive) — non-executable files
+// keep their full filename (file search can return anything, but the
+// launcher's inventory is executables). Derived from the basename, never the
+// whole path.
+inline QString fileEntryTitle(const QString &path)
+{
+    const int slash = qMax(path.lastIndexOf(u'/'), path.lastIndexOf(u'\\'));
+    QString name = path.mid(slash + 1);
+    if (name.size() > 4 && name.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive))
+        name.chop(4);
+    return name;
+}
 struct AppEntry {
     enum class Source { Lnk, Uwp, File };
     Source source = Source::Lnk;

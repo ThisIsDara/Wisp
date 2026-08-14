@@ -1,7 +1,7 @@
 #include "core/LaunchHistory.h"
 
 #include <QDir>
-#include <QFileInfo>
+
 #include <QSet>
 
 #include <algorithm>
@@ -30,8 +30,9 @@ QSettings makeSettings(const QString &settingsPath)
 }
 
 // Shared entry builder for both accessors: Source::File, displayName derived
-// from the path filename (never stored — D-10 single source of truth), path
-// normalized at write time. Deduped by path across the caller's set.
+// from the path filename minus ".exe" (never stored — D-10 single source of
+// truth; .exe stripped 2026-08-15), path normalized at write time. Deduped by
+// path across the caller's set.
 void appendEntry(QVector<AppEntry> &result, QSet<QString> &seen, const QString &path)
 {
     if (seen.contains(path))
@@ -39,7 +40,7 @@ void appendEntry(QVector<AppEntry> &result, QSet<QString> &seen, const QString &
     seen.insert(path);
     AppEntry e;
     e.source = AppEntry::Source::File;
-    e.displayName = QFileInfo(path).fileName(); // derived, never stored (D-10)
+    e.displayName = fileEntryTitle(path); // derived, never stored (D-10) — .exe stripped
     e.targetPath = path;
     result.append(e);
 }

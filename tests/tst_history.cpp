@@ -43,6 +43,7 @@ private slots:
     void forwardSlashNormalization();
     void uwpSkipped();
     void countsIndependentOfName();
+    void fileEntryTitleStripsExe(); // 2026-08-15: ".exe" dropped from titles
     void concurrentAccessThreadSafe_WR01();
 };
 
@@ -79,9 +80,9 @@ void TstHistory::sourceFileTag()
     const QVector<AppEntry> tracked = history.trackedExecutables();
     QCOMPARE(tracked.size(), 1);
     QCOMPARE(tracked.at(0).source, AppEntry::Source::File);
-    // displayName is DERIVED from the path (filename) — never stored (D-10
-    // single source of truth; a renamed file shows its new name).
-    QCOMPARE(tracked.at(0).displayName, QStringLiteral("Alpha.exe"));
+    // displayName is DERIVED from the path (filename minus ".exe" — 2026-08-15),
+    // never stored (D-10 single source of truth; a renamed file shows its new name).
+    QCOMPARE(tracked.at(0).displayName, QStringLiteral("Alpha"));
     QCOMPARE(tracked.at(0).targetPath, QStringLiteral("C:\\apps\\Alpha.exe"));
 }
 
@@ -98,7 +99,7 @@ void TstHistory::manualAddPersists_D11()
     const QVector<AppEntry> tracked = reloaded.trackedExecutables();
     QCOMPARE(tracked.size(), 1);
     QCOMPARE(tracked.at(0).targetPath, QStringLiteral("C:\\apps\\WoW.exe"));
-    QCOMPARE(tracked.at(0).displayName, QStringLiteral("WoW.exe"));
+    QCOMPARE(tracked.at(0).displayName, QStringLiteral("WoW"));
 }
 
 void TstHistory::addedOnlyIsolation_D14()
@@ -117,7 +118,7 @@ void TstHistory::addedOnlyIsolation_D14()
     const QVector<AppEntry> added = history.addedExecutables();
     QCOMPARE(added.size(), 1);
     QCOMPARE(added.at(0).targetPath, QStringLiteral("C:\\apps\\Picked.exe"));
-    QCOMPARE(added.at(0).displayName, QStringLiteral("Picked.exe"));
+    QCOMPARE(added.at(0).displayName, QStringLiteral("Picked"));
     // The launch-tracked exe stays in the tracked union (live-query source)…
     QCOMPARE(history.trackedExecutables().size(), 2);
     // …but never in the added channel. (Path identity — AppEntry has no
@@ -195,8 +196,23 @@ void TstHistory::countsIndependentOfName()
     const QVector<AppEntry> tracked = history.trackedExecutables();
     QCOMPARE(tracked.size(), 1);
     // The stored entry never carries a displayName — the current filename
-    // (path-derived) is what surfaces.
-    QCOMPARE(tracked.at(0).displayName, QStringLiteral("Beta.exe"));
+    // (path-derived, minus ".exe") is what surfaces.
+    QCOMPARE(tracked.at(0).displayName, QStringLiteral("Beta"));
+}
+
+void TstHistory::fileEntryTitleStripsExe()
+{
+    // 2026-08-15: File-row titles drop the ".exe" extension ("Wow.exe" →
+    // "Wow"). Only .exe is stripped (case-insensitive), and only from the
+    // basename — the full path is untouched.
+    QCOMPARE(fileEntryTitle(QStringLiteral("C:\\Games\\WoW.exe")), QStringLiteral("WoW"));
+    QCOMPARE(fileEntryTitle(QStringLiteral("D:\\tools\\App.EXE")), QStringLiteral("App")); // case-insensitive
+    QCOMPARE(fileEntryTitle(QStringLiteral("C:\\apps\\a.exe")), QStringLiteral("a"));
+    QCOMPARE(fileEntryTitle(QStringLiteral("C:\\Games\\sub\\Tool.exe")), QStringLiteral("Tool")); // basename only
+    QCOMPARE(fileEntryTitle(QStringLiteral("C:\\docs\\report.pdf")), QStringLiteral("report.pdf")); // non-.exe kept
+    QCOMPARE(fileEntryTitle(QStringLiteral("C:\\noext")), QStringLiteral("noext"));
+    QCOMPARE(fileEntryTitle(QStringLiteral("C:\\dir")), QStringLiteral("dir"));
+    QCOMPARE(fileEntryTitle(QStringLiteral(".exe")), QStringLiteral(".exe")); // extension-only name kept
 }
 
 void TstHistory::concurrentAccessThreadSafe_WR01()
