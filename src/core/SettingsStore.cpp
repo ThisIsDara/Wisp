@@ -1,5 +1,7 @@
 #include "core/SettingsStore.h"
 
+#include <QDir>
+
 namespace {
 
 // PATTERNS Shared Pattern 1 — LaunchHistory.cpp:24-30 VERBATIM: IniFormat +
@@ -62,6 +64,31 @@ QStringList SettingsStore::scanRoots() const
 
 int SettingsStore::scanIntervalMinutes() const
 {
-    // Silent fallback to the D-09 default (10 min) on missing/garbage values.
-    return m_settings.value(QStringLiteral("scan/intervalMinutes"), 10).toInt();
+    // Silent fallback to the D-09 default (10 min) on missing/garbage values;
+    // the clamp (OQ4: 1 min .. 24 h) is applied at READ so a tampered INI
+    // still reads a legal value.
+    return qBound(1, m_settings.value(QStringLiteral("scan/intervalMinutes"), 10).toInt(), 1440);
+}
+
+void SettingsStore::setScanRoots(const QStringList &roots)
+{
+    // Pitfall 5: QFileDialog returns '/'-separated paths — one normalization
+    // site so memo/query keys agree across every producer. Empty entries are
+    // dropped and duplicates collapsed (order preserved — UI shows insertion
+    // order).
+    QStringList cleaned;
+    for (const QString &root : roots) {
+        const QString norm = QDir::toNativeSeparators(root).trimmed();
+        if (norm.isEmpty() || cleaned.contains(norm))
+            continue;
+        cleaned.append(norm);
+    }
+    m_settings.setValue(QStringLiteral("scan/roots"), cleaned);
+    m_settings.sync(); // LaunchHistory.cpp:48/58 discipline — sync after EVERY write
+}
+
+void SettingsStore::setScanIntervalMinutes(int minutes)
+{
+    m_settings.setValue(QStringLiteral("scan/intervalMinutes"), qBound(1, minutes, 1440));
+    m_settings.sync();
 }

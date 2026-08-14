@@ -80,13 +80,13 @@ QtObject {
     readonly property int menuItemHeight: 28      // compact context-menu item height (05.1)
     readonly property int fontSizeMenu: 13        // context menu item text (05.1, declared between 12/15)
 
-    // --- Phase-6 settings tokens (06-UI-SPEC Spacing Scale / Color / Geometry) ---
-    // Window + surface geometry (locked: 480x360 / 448x328, 280x320 / 248x288;
+    // --- Phase-6/7 settings tokens (06-UI-SPEC Spacing Scale / Color / Geometry) ---
+    // Window + surface geometry (480x360 → 480x560 + scan section, 07-05;
     // surface = window − 2x16 shadow margin, same shell as the launcher).
     readonly property int settingsWindowWidth: 480
-    readonly property int settingsWindowHeight: 360
+    readonly property int settingsWindowHeight: 560
     readonly property int settingsSurfaceWidth: 448
-    readonly property int settingsSurfaceHeight: 328
+    readonly property int settingsSurfaceHeight: 528
     readonly property int colorDialogWindowWidth: 280
     readonly property int colorDialogWindowHeight: 320
     readonly property int colorDialogSurfaceWidth: 248
@@ -103,14 +103,19 @@ QtObject {
     readonly property int ringWidth: 2            // declared sub-grid garnish (selection indicator)
     readonly property int swatchRadius: 6         // declared sub-grid exception (tokenized well corners)
     readonly property color swatchWellBg: "#2D2D30" // strip backing / unselected swatch well (= surfaceSecondary)
-    // Fields/rows (UI-SPEC Spacing Scale; row heights are 4-grid: 64/88/64)
+    // Fields/rows (UI-SPEC Spacing Scale; row heights are 4-grid: 64/88/64/158)
     readonly property int fieldRadius: 6          // hotkey value well corner (tokenizes shipped capture-dialog literal)
     readonly property int fieldHeight: 36         // hotkey value well height (tokenizes shipped capture-dialog literal)
     readonly property int settingsRowHotkey: 64
     readonly property int settingsRowAccent: 88
     readonly property int settingsRowAutostart: 64
-    readonly property int settingsRowGap: 12      // spaceMd — declared (not 16; vertical budget 318 <= 328)
+    readonly property int settingsRowGap: 12      // spaceMd — declared (not 16; vertical budget 488 <= 528)
     readonly property int settingsPad: 24         // content column margins (spaceXl)
+    // "Scan locations" section (07-05, D-10): 18 title + 8 + 56 roots + 8 +
+    // 28 interval + 8 + 28 action = 154 within 158.
+    readonly property int settingsRowScan: 158
+    readonly property int settingsRowScanItem: 28 // per-root row / interval row / action row height
+    readonly property int settingsRowScanRoots: 56 // visible root-list height (2 rows of 28)
     // Autostart toggle (UI-SPEC Color interaction tokens)
     readonly property int toggleWidth: 40
     readonly property int toggleHeight: 20

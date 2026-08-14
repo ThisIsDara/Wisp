@@ -39,12 +39,19 @@ public:
     Q_INVOKABLE void setAccent(const QColor &c);
 
     // ── Phase-7 scan settings (07-04 reads, 07-05 writes) ──
-    // Live reads from the same INI keys the 07-05 Settings UI writes
+    // Live reads from the same INI keys the Settings UI writes
     // ("scan/roots" list, "scan/intervalMinutes"); defaults = no roots /
     // 10 minutes (D-09 roadmap range). Consumed by main.cpp's ScanService
     // settingsSource on the UI thread (Pitfall 4 snapshot).
     QStringList scanRoots() const;
     int scanIntervalMinutes() const;
+    // Writes: roots normalized to native separators (Pitfall 5 — QFileDialog
+    // yields '/'-paths), empty entries dropped, duplicates collapsed (order
+    // preserved); interval clamped 1..1440 (OQ4). Persist-then-sync like the
+    // accent path (LaunchHistory discipline). No signals — the SettingsWindow
+    // controller emits its own on every mutation (live-read precedent).
+    void setScanRoots(const QStringList &roots);
+    void setScanIntervalMinutes(int minutes);
 
 signals:
     void accentChanged(const QColor &accent);
