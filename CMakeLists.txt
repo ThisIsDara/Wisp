@@ -13,6 +13,7 @@ qt_policy(SET QTP0001 NEW)   # module resources at :/qt/qml/<Module> — the imp
 qt_add_library(wisp_core STATIC
     src/win/WinHotkey.cpp
     src/win/WinFullscreenGuard.cpp
+    src/win/WinDirectoryWalk.cpp
     src/win/WinStartMenuEnumerator.cpp
     src/win/WinUwpEnumerator.cpp
     src/win/WinLaunch.cpp
