@@ -693,9 +693,8 @@ Window {
                 }
                 // 2026-08-15 (UI pass): paired with "Add folder to scan…" —
                 // same glyph slot (16px, leftMargin 16, spacing 4) so the two
-                // inventory rows read as one action family. The Add glyph is
-                // muted (textSecondary) — the folder row's accentLight marks
-                // the PRIMARY path; this row is the secondary one.
+                // inventory rows read as one action family. Both show the same
+                // neon-orange + (appOutline) — the user matched them.
                 Row {
                     anchors.left: parent.left
                     anchors.leftMargin: Theme.spaceLg   // aligns with the list's icon column (2026-08-11)
@@ -703,10 +702,10 @@ Window {
                     spacing: Theme.spaceXs
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "\uE710" // MDL2 "Add"
+                        text: "\uE710" // MDL2 "Add" — orange, matches the Add-folder row's + (2026-08-15)
                         font.family: "Segoe MDL2 Assets"
                         font.pixelSize: Theme.fontSizeSubtitle
-                        color: addExeArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                        color: Theme.appOutline
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
