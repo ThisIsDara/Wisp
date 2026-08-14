@@ -28,6 +28,9 @@ class FileSearch : public QObject
     // live on the UI thread; NOTIFY rides stateChanged (a scan completing
     // transitions Scanning→Idle and refreshes the summary).
     Q_PROPERTY(QString lastScanSummary READ lastScanSummary NOTIFY stateChanged)
+    // 2026-08-15: true while a scan is in progress (m_state == Scanning) —
+    // drives the indeterminate progress bar in the launcher's status state.
+    Q_PROPERTY(bool scanning READ scanning NOTIFY stateChanged)
 
 public:
     // D-17 locked states; ordinal order mirrors ScanService::ScanState
@@ -76,6 +79,7 @@ public:
     QString statusText() const; // D-17 locked copy (RESEARCH §9), "" when Idle
     bool indexerOk() const;     // state() == Idle (D-18 row gate)
     QString lastScanSummary() const; // 07-06 live UI-thread read; "" = never scanned
+    bool scanning() const;      // 2026-08-15: state() == Scanning — progress-bar gate
 
 signals:
     // D-15: results carry the generation; ResultsModel::setFileResults (04-04)

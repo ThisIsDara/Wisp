@@ -246,6 +246,11 @@ bool FileSearch::indexerOk() const
     return m_state == FileSearchState::Idle;
 }
 
+bool FileSearch::scanning() const
+{
+    return m_state == FileSearchState::Scanning;
+}
+
 QString FileSearch::lastScanSummary() const
 {
     // Live UI-thread read — ScanService::lastScanSummary is plain member

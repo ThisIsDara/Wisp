@@ -155,6 +155,15 @@ int main(int argc, char *argv[])
     });
     scanService.start();                                          // arms interval timer if roots exist (D-09)
 
+    // 2026-08-15 (saved-list on open): the persisted index was loaded above
+    // (index.load()) and start() never scans at boot (D-09), so dispatch the
+    // CURRENT (empty) query NOW to render the saved list instantly instead of
+    // leaving the launcher blank until the first interval scan or a keystroke.
+    // refresh() → empty-query snapshot = whole loaded index + manual picks
+    // (D-14); one worker round-trip, no scan, no debounce. Scans later update
+    // it via scanStateChanged → refresh (below).
+    fileSearch.refresh();
+
     // ── Phase-05.1 (05.1-04): curation seams — hide/show persistence from
     // the model. Hide must NEVER trigger ensureFresh/setEntries (research
     // Pitfall 3 — the model removes live). AppCatalog's curation source is

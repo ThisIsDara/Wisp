@@ -37,6 +37,7 @@ class SettingsWindow : public QObject
     Q_PROPERTY(QStringList scanRoots READ scanRoots NOTIFY scanRootsChanged)
     Q_PROPERTY(int scanIntervalMinutes READ scanIntervalMinutes NOTIFY scanIntervalChanged)
     Q_PROPERTY(QString lastScanSummary READ lastScanSummary NOTIFY lastScanSummaryChanged)
+    Q_PROPERTY(bool scanning READ scanning NOTIFY lastScanSummaryChanged) // 2026-08-15: scan-in-progress → progress bar
 
 public:
     // All collaborators are injected (no store reach-in, no service lookup):
@@ -69,6 +70,7 @@ public:
     Q_INVOKABLE QStringList scanRoots() const;            // live store read
     Q_INVOKABLE int scanIntervalMinutes() const;          // live store read
     Q_INVOKABLE QString lastScanSummary() const;          // ScanService live summary
+    Q_INVOKABLE bool scanning() const;                    // ScanService state == Scanning
     Q_INVOKABLE void addScanRoot();                       // native picker → store → requestScan
     Q_INVOKABLE void removeScanRoot(int index);           // store → requestScan (empty → NoRoots)
     Q_INVOKABLE void setScanInterval(int minutes);        // store → refreshInterval

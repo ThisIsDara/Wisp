@@ -630,6 +630,48 @@ Window {
                         }
                     }
                 }
+
+                    // ── Scan progress bar (2026-08-15) — indeterminate, shown
+                    // only while a scan is in flight (settingsController.scanning).
+                    // A moving appOutline chunk sweeps the surfaceSecondary
+                    // track; the honest "no fake %" choice for a recursive walk
+                    // where the total dir count isn't known upfront. Overlays
+                    // the section bottom (never participates in the centered
+                    // layout, so the fixed 170px budget stays put).
+                    Item {
+                        id: scanBar
+                        anchors.right: parent.right
+                        anchors.rightMargin: Theme.spaceMd
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: Theme.spaceSm
+                        width: 260
+                        height: Theme.scanBarHeight
+                        visible: settingsController && settingsController.scanning
+                        Rectangle {
+                            anchors.fill: parent
+                            color: Theme.surfaceSecondary
+                            radius: Theme.scanBarRadius
+                        }
+                        Rectangle {
+                            id: scanChunk
+                            width: scanBar.width / 3
+                            height: scanBar.height
+                            color: Theme.appOutline
+                            radius: Theme.scanBarRadius
+                            x: scanChunkAnim.value
+                            SequentialAnimation on x {
+                                id: scanChunkAnim
+                                running: scanChunk.visible
+                                loops: Animation.Infinite
+                                PropertyAnimation {
+                                    from: -scanBar.width
+                                    to: scanBar.width
+                                    duration: 900
+                                    easing.type: Easing.InOutCubic
+                                }
+                            }
+                        }
+                    }
             }
         }
     }

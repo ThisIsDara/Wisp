@@ -34,6 +34,10 @@ Window {
         // match chips, ▸ glyph) binds to Theme.accent. The reactive path for
         // Phase 6's picker lives in the Connections block below (D-15).
         Theme.accent = settingsStore.accent
+        // 2026-08-15: start on the Favorites tab when the user has favorited
+        // something (persisted set, seeded into the model before QML load);
+        // otherwise All. Read once — subsequent tabs are user-driven.
+        resultsModel.favoritesOnly = resultsModel.favoriteCount > 0
     }
 
     // The animated subtree: entire surface INCLUDING shadow (UI-SPEC rule 4).
@@ -961,6 +965,39 @@ Text {
                         font.weight: Theme.fontWeightRegular
                         color: Theme.textSecondary
                     }
+                    // 2026-08-15: indeterminate scan-progress bar while a scan
+                    // is in flight (no-roots / first-scan empty state).
+                    Item {
+                        id: noRootsBar
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 200
+                        height: Theme.scanBarHeight
+                        visible: fileSearch.scanning
+                        Rectangle {
+                            anchors.fill: parent
+                            color: Theme.surfaceSecondary
+                            radius: Theme.scanBarRadius
+                        }
+                        Rectangle {
+                            id: noRootsChunk
+                            width: noRootsBar.width / 3
+                            height: noRootsBar.height
+                            color: Theme.appOutline
+                            radius: Theme.scanBarRadius
+                            x: noRootsChunkAnim.value
+                            SequentialAnimation on x {
+                                id: noRootsChunkAnim
+                                running: noRootsChunk.visible
+                                loops: Animation.Infinite
+                                PropertyAnimation {
+                                    from: -noRootsBar.width
+                                    to: noRootsBar.width
+                                    duration: 900
+                                    easing.type: Easing.InOutCubic
+                                }
+                            }
+                        }
+                    }
                     // 07-06: direct "start" action — pick a folder without
                     // going through Settings first (same main.cpp wiring).
                     Item {
@@ -1013,12 +1050,49 @@ Text {
                 anchors.fill: resultsView
                 visible: resultsModel.query !== "" && !fileSearch.indexerOk
                          && resultsView.count === 0
-                Text {
+                Column {
                     anchors.centerIn: parent
-                    text: fileSearch.statusText
-                    font.pixelSize: Theme.fontSizeTitle
-                    font.weight: Theme.fontWeightRegular
-                    color: Theme.textSecondary
+                    spacing: Theme.spaceSm
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: fileSearch.statusText
+                        font.pixelSize: Theme.fontSizeTitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textSecondary
+                    }
+                    // 2026-08-15: indeterminate scan-progress bar while a scan
+                    // is in flight (empty live-query state, same region).
+                    Item {
+                        id: statusBar
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 200
+                        height: Theme.scanBarHeight
+                        visible: fileSearch.scanning
+                        Rectangle {
+                            anchors.fill: parent
+                            color: Theme.surfaceSecondary
+                            radius: Theme.scanBarRadius
+                        }
+                        Rectangle {
+                            id: statusChunk
+                            width: statusBar.width / 3
+                            height: statusBar.height
+                            color: Theme.appOutline
+                            radius: Theme.scanBarRadius
+                            x: statusChunkAnim.value
+                            SequentialAnimation on x {
+                                id: statusChunkAnim
+                                running: statusChunk.visible
+                                loops: Animation.Infinite
+                                PropertyAnimation {
+                                    from: -statusBar.width
+                                    to: statusBar.width
+                                    duration: 900
+                                    easing.type: Easing.InOutCubic
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

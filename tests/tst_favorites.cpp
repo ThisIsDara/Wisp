@@ -126,6 +126,8 @@ void TstFavorites::isFavoriteRole()
     m.setFavoriteIds({ QStringLiteral("C:\\apps\\B.exe") });
     QVERIFY(!m.data(m.index(0), ResultsModel::IsFavoriteRole).toBool());
     QVERIFY(m.data(m.index(1), ResultsModel::IsFavoriteRole).toBool());
+    // favoriteCount reflects the persisted set — the startup tab default.
+    QCOMPARE(m.favoriteCount(), 1);
 }
 
 void TstFavorites::favoriteSelectedPersists()

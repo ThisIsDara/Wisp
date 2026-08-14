@@ -91,6 +91,10 @@ QtObject {
     readonly property int emptyStateWellRadius: 24 // fully rounded well (declared sub-grid garnish)
     readonly property int emptyStateWellGlyphSize: 20 // glyph inside the well (declared between 15/18)
     readonly property int searchUnderlineHeight: 2 // search-field focus bar (declared sub-grid — Windows 11 focus underline)
+    // 2026-08-15: indeterminate scan-progress bar (track = surfaceSecondary,
+    // moving chunk = appOutline)
+    readonly property int scanBarHeight: 4     // progress-bar track height (declared sub-grid)
+    readonly property int scanBarRadius: 2     // fully rounded ends (declared sub-grid garnish)
     readonly property int tickWidth: 5            // sliding selection tick width (2026-08-11 redesign)
     readonly property int tickHeight: 26          // tick height — compact, centered on the 44px row
     readonly property int tickRadius: 3           // tick corner radius (fully rounded ends)

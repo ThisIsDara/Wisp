@@ -594,6 +594,11 @@ bool ResultsModel::favoritesOnly() const
     return m_favoritesOnly;
 }
 
+int ResultsModel::favoriteCount() const
+{
+    return m_favoriteIds.size();
+}
+
 void ResultsModel::setFavoritesOnly(bool on)
 {
     if (m_favoritesOnly == on)

@@ -28,6 +28,7 @@ class ResultsModel : public QAbstractListModel
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged) // 05.1: show-hidden mode toggle
     Q_PROPERTY(int hiddenCount READ hiddenCount NOTIFY hiddenCountChanged) // 05.1: footer visibility (rule- AND user-hidden)
     Q_PROPERTY(bool favoritesOnly READ favoritesOnly WRITE setFavoritesOnly NOTIFY favoritesOnlyChanged) // 2026-08-15: "Favorites" tab mode
+    Q_PROPERTY(int favoriteCount READ favoriteCount) // 2026-08-15: persisted favorite-id count — startup tab default (All if 0)
 
 public:
     enum Roles {
@@ -100,6 +101,7 @@ public:
     Q_INVOKABLE void unfavoriteSelected(); // unmark the selected row (persist false)
     bool favoritesOnly() const;
     Q_INVOKABLE void setFavoritesOnly(bool on); // "All | Favorites" tab toggle
+    int favoriteCount() const; // 2026-08-15: m_favoriteIds.size() — persisted favorites
     // Persistence seam — production binds FavoritesStore (main.cpp);
     // tests inject spies. UI thread only (FavoritesStore precedent).
     using FavoriteStore = std::function<void(const QString &id, bool favorite)>;

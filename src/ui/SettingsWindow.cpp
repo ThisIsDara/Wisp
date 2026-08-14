@@ -155,6 +155,12 @@ QString SettingsWindow::lastScanSummary() const
     return m_scanService ? m_scanService->lastScanSummary() : QString();
 }
 
+bool SettingsWindow::scanning() const
+{
+    return m_scanService
+        && m_scanService->stateOrdinal() == int(ScanService::ScanState::Scanning);
+}
+
 void SettingsWindow::addScanRoot()
 {
     if (!m_settingsStore || !m_folderPicker)
