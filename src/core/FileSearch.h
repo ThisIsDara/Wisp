@@ -65,6 +65,10 @@ public:
     // pass: every row shows, alphabetical). Non-empty → restart the 150ms
     // debounce; the LAST text wins when typing pauses.
     Q_INVOKABLE void setQuery(const QString &query);
+    // 07-06: re-dispatch with the CURRENT query — used when the index
+    // content changed without a query change (a completed scan fills the
+    // default list / refreshes live results). Cheap: one worker round-trip.
+    void refresh();
     // D-11: pinned "Add executable…" row → dialog → store → immediate
     // re-dispatch (fresh generation) so the new exe appears right away.
     Q_INVOKABLE void addExecutable();

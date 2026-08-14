@@ -67,6 +67,7 @@ private slots:
     void addExecutableRedispatches_D11();
     void quietFillIn_D13();
     void lastScanSummaryProxied_0706();
+    void refreshRedispatches_0706();
 
 private:
     // WR-05: dedicated pool — controlled thread count, zero contention from
@@ -427,6 +428,46 @@ void TstFileSearch::lastScanSummaryProxied_0706()
 
     summary = QStringLiteral("Last scan 14:40 — 2,000 entries"); // scan completed
     QCOMPARE(fs.lastScanSummary(), summary);   // getter re-reads the fresh value
+}
+
+void TstFileSearch::refreshRedispatches_0706()
+{
+    // 07-06: refresh() re-dispatches with the CURRENT query — a completed
+    // scan changed the index without a query change, and the default list
+    // must refill. Proved by making the index "grow" between dispatches.
+    FileSearch fs;
+    fs.setPool(&m_pool);
+    std::atomic<int> calls{ 0 };
+    fs.setQueryFn([&](const QString &) {
+        const int n = ++calls;
+        QVector<AppEntry> entries;
+        entries.append(fileEntry(QStringLiteral("A.exe"), QStringLiteral("C:\\a\\A.exe")));
+        if (n >= 2)
+            entries.append(fileEntry(QStringLiteral("B.exe"), QStringLiteral("C:\\b\\B.exe")));
+        return FileSearch::QueryResult{ entries, false };
+    });
+    QSignalSpy results(&fs, &FileSearch::resultsReady);
+
+    fs.setQuery(QStringLiteral("a")); // live query path
+    QVERIFY(results.wait(kWaitGenerous));
+    QCOMPARE(calls.load(), 1);
+    QCOMPARE(results.count(), 1);
+    QCOMPARE(results.first().at(2).value<QVector<AppEntry>>().size(), 1);
+
+    fs.refresh(); // "scan completed" — no query change
+    QVERIFY(results.wait(kWaitGenerous));
+    QCOMPARE(calls.load(), 2);
+    QCOMPARE(results.count(), 2);
+    QCOMPARE(results.last().at(2).value<QVector<AppEntry>>().size(), 2); // grew
+    QCOMPARE(results.last().at(1).toString(), QStringLiteral("a"));     // same query text
+
+    fs.setQuery(QString()); // default-list path
+    QVERIFY(results.wait(kWaitGenerous));
+    const int before = results.count();
+    fs.refresh();
+    QVERIFY(results.wait(kWaitGenerous));
+    QCOMPARE(results.count(), before + 1); // empty query re-snapshots too
+    QCOMPARE(results.last().at(1).toString(), QString()); // empty query carried
 }
 
 QTEST_MAIN(TstFileSearch)

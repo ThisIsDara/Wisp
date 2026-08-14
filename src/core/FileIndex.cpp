@@ -209,6 +209,12 @@ void FileIndex::apply(const WalkOutcome &outcome)
 bool FileIndex::save() const
 {
     const QMutexLocker lock(&m_mutex);
+    // 07-06: QSaveFile does NOT create parent directories — a fresh
+    // %APPDATA%\TID\wisp\ (never created before the first scan) made every
+    // save fail silently and the index vanish on relaunch. Mkpath first.
+    QFileInfo fi(m_path);
+    if (!QDir().mkpath(fi.absolutePath()))
+        return false;
     QSaveFile file(m_path);
     if (!file.open(QIODevice::WriteOnly))
         return false;

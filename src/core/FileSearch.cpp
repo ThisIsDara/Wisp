@@ -118,6 +118,11 @@ void FileSearch::addExecutable()
     emit addExecutableDone(p);
 }
 
+void FileSearch::refresh()
+{
+    dispatch(); // current m_query — empty → default-list snapshot, live → merged results
+}
+
 void FileSearch::dispatch()
 {
     const quint64 gen = ++m_generation; // UI thread only

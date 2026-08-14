@@ -216,6 +216,13 @@ int main(int argc, char *argv[])
                                      const QVector<AppEntry> &files) {
                          resultsModel.setFileResults(generation, query, files);
                      });
+    // 07-06: a scan state change (start / completion / failure) means the
+    // INDEX changed without the query text changing — re-dispatch so the
+    // default list fills with scanned executables the moment the walk lands
+    // (previously the list only refreshed on typing, so picking a folder
+    // appeared to do nothing). Cheap: one worker round-trip per transition.
+    QObject::connect(&scanService, &ScanService::scanStateChanged, &fileSearch,
+                     [&fileSearch] { fileSearch.refresh(); });
 
 #ifdef QT_DEBUG
     // VISU-01 perf guard: log any frame over the 60fps budget (17ms).

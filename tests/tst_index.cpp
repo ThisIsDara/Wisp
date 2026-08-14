@@ -1,3 +1,4 @@
+#include <QFileInfo>
 #include <QHash>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -31,6 +32,7 @@ private slots:
     void hiddenEntriesAreExcluded();
     void queryCandidatesPrefilter();
     void persistenceRoundTrip();
+    void saveCreatesMissingParentDir();
     void corruptIndexFileLoadsEmpty();
     void concurrentReadsDuringWalk();
 
@@ -310,6 +312,21 @@ void TstIndex::persistenceRoundTrip()
     QCOMPARE(reloaded.entryCount(), 3);
     const auto outcome = reloaded.walkAndDelta(QStringList{root}, listFn);
     QCOMPARE(outcome.dirsListed, 1);
+}
+
+void TstIndex::saveCreatesMissingParentDir()
+{
+    // 07-06: QSaveFile does NOT create parent directories — %APPDATA%\TID\
+    // wisp\ only materializes on the first save. Save must mkpath first, or
+    // every scan's persistence fails silently and the index vanishes on
+    // relaunch (the observed bug: roots existed, search worked, no index
+    // file on disk).
+    const QString nested = m_dir.path() + QStringLiteral("\\a\\b"); // missing
+    FileIndex index(nested + QStringLiteral("\\index.dat"));
+    index.apply(FileIndex::WalkOutcome{}); // empty outcome — save() still must work
+    QVERIFY(index.save());
+    QVERIFY(QFileInfo::exists(nested + QStringLiteral("\\index.dat")));
+    QVERIFY(FileIndex(nested + QStringLiteral("\\index.dat")).load());
 }
 
 void TstIndex::corruptIndexFileLoadsEmpty()
