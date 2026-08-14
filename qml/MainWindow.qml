@@ -644,17 +644,16 @@ Window {
                     anchors.leftMargin: Theme.spaceLg   // aligns with the list's icon column
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Theme.spaceXs
-                    // 2026-08-15 (UI pass): the folder glyph is accent-tinted
-                    // ALWAYS — scanning folders is the launcher's primary
-                    // inventory path (07-06 pivot), and accentLight is the
-                    // established folder marker family (result-row ▸). The
-                    // hover read comes from the label, not the glyph.
+                    // 2026-08-15: a "+" (MDL2 Add) in the neon-orange identity
+                    // color — the user dropped the accent-blue folder here.
+                    // Same glyph as "Add executable…" (both are add actions),
+                    // distinguished by color (orange = primary inventory path).
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "\uE8B7" // MDL2 "Folder"
+                        text: "\uE710" // MDL2 "Add" (a plus)
                         font.family: "Segoe MDL2 Assets"
                         font.pixelSize: Theme.fontSizeSubtitle
-                        color: Theme.accentLight
+                        color: Theme.appOutline
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
@@ -864,8 +863,8 @@ Item {
                             Row {
                                 id: folderRow
                                 spacing: Theme.spaceXs
-                                Text {
-text: "\uE8F4" // MDL2 "NewFolder" (2026-08-15: 'add a folder')
+Text {
+                                    text: "\uE8B7" // MDL2 "Folder"
                                     font.family: "Segoe MDL2 Assets"
                                     font.pixelSize: Theme.fontSizeSubtitle
                                     color: folderRowHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
