@@ -277,8 +277,14 @@ Item {
         visible: model.isHideable
         width: Theme.removeButtonSize
         height: Theme.removeButtonSize
-        anchors.right: parent.right
-        anchors.rightMargin: Theme.spaceSm
+        // 2026-08-15: the selected row scales up (selectedScale, from the
+        // LEFT edge), which would push a right-anchored button ~4% right on
+        // the always-selected first row — "the X is a bit off for the first
+        // item". Instead of anchors.right, pin the VISUAL right edge to the
+        // row's logical right edge by dividing the logical x by row.scale:
+        // rendered right = (x + width) * row.scale = parent.width - spaceSm,
+        // constant across every row (selected or not).
+        x: (parent.width - Theme.spaceSm) / row.scale - width
         anchors.verticalCenter: parent.verticalCenter
         opacity: row.hovered ? Theme.fullOpacity : 0
         Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
