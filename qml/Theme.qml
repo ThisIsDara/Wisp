@@ -3,13 +3,13 @@ import QtQuick
 
 QtObject {
     // --- Color (UI-SPEC Color section) ---
-    readonly property color surface: "#1E1E1E"          // dominant 60% — window surface
+    readonly property color surface: "#000000"          // dominant 60% — window surface (fully black, 2026-08-15)
     readonly property color surfaceSecondary: "#2D2D30" // secondary 30% — inset wells (Phase 3)
     // Neon/cyberpunk identity (2026-08-15): appOutline is the bright neon-orange
     // ring around the WHOLE app; appOutlineDim is the dim halo ring just
     // outside it (reads as a neon tube with zero blur cost — D-06 never
     // blurs the hot path); listBg is the results panel, DARKER than surface.
-    readonly property color listBg: "#101010"             // results panel — darker than surface
+    readonly property color listBg: "#000000"             // results panel — fully black, matches the surface (2026-08-15)
     readonly property color appOutline: "#FF7A00"         // neon-orange outline around the whole app
     readonly property color appOutlineDim: "#9C5400"      // dim halo ring outside the bright ring
     readonly property int appOutlineWidth: 2              // neon outline border width

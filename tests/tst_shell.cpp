@@ -85,7 +85,7 @@ void ShellTest::themeTokens()
     QScopedPointer<QObject> obj(component.create());
     QVERIFY2(obj, "Theme probe must instantiate");
 
-    QCOMPARE(obj->property("surface").value<QColor>(), QColor("#1E1E1E"));
+    QCOMPARE(obj->property("surface").value<QColor>(), QColor("#000000"));
     QCOMPARE(obj->property("animOpenDuration").toInt(), 150);
     QCOMPARE(obj->property("animCloseDuration").toInt(), 140);
     QCOMPARE(obj->property("easingOpen").toInt(), int(QEasingCurve::OutCubic));   // 6 in Qt 6.11
