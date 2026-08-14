@@ -51,6 +51,11 @@ void FileSearch::setStatusFn(StatusFn fn)
     m_statusFn = std::move(fn);
 }
 
+void FileSearch::setSummaryFn(SummaryFn fn)
+{
+    m_summaryFn = std::move(fn);
+}
+
 void FileSearch::setTrackedSource(TrackedSource fn)
 {
     m_trackedSource = std::move(fn);
@@ -218,4 +223,13 @@ QString FileSearch::statusText() const
 bool FileSearch::indexerOk() const
 {
     return m_state == FileSearchState::Idle;
+}
+
+QString FileSearch::lastScanSummary() const
+{
+    // Live UI-thread read — ScanService::lastScanSummary is plain member
+    // state on the UI thread (the worker only touches the index). NOTIFY is
+    // stateChanged: a scan completion transitions Scanning→Idle, which is
+    // exactly when the summary refreshes.
+    return m_summaryFn ? m_summaryFn() : QString();
 }

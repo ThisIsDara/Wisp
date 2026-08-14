@@ -131,6 +131,10 @@ int main(int argc, char *argv[])
         }
         return int(FileSearch::FileSearchState::Idle);
     });
+    // 07-06: scan summary proxy — the launcher's empty state shows
+    // "Last scan HH:mm — N entries" once a scan ran, so picking a folder
+    // gives visible confirmation (the list itself fills on typing).
+    fileSearch.setSummaryFn([&scanService] { return scanService.lastScanSummary(); });
     fileSearch.setTrackedSource([&history] { return history.trackedExecutables(); }); // D-06/D-10
     fileSearch.setAddExeDialog([] {                                                    // D-11 native dialog
         return QFileDialog::getOpenFileName(nullptr, QStringLiteral("Add executable"),

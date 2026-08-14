@@ -24,6 +24,10 @@ class FileSearch : public QObject
     // resultsModel.query !== "" in QML).
     Q_PROPERTY(QString statusText READ statusText NOTIFY stateChanged)
     Q_PROPERTY(bool indexerOk READ indexerOk NOTIFY stateChanged)
+    // 07-06: last-scan summary (ScanService::lastScanSummary proxy) — read
+    // live on the UI thread; NOTIFY rides stateChanged (a scan completing
+    // transitions Scanning→Idle and refreshes the summary).
+    Q_PROPERTY(QString lastScanSummary READ lastScanSummary NOTIFY stateChanged)
 
 public:
     // D-17 locked states; ordinal order mirrors ScanService::ScanState
@@ -42,6 +46,7 @@ public:
     using AddedSource = std::function<QVector<AppEntry>()>;                 // D-11 — wired to LaunchHistory::addedExecutables (default-list escape hatch)
     using AddExeDialog = std::function<QString()>;                          // D-11 native dialog; "" = cancelled
     using AddEntryStore = std::function<void(const QString &path)>;         // D-11 persist — wired to LaunchHistory::addExecutable
+    using SummaryFn = std::function<QString()>;                             // 07-06 — wired to ScanService::lastScanSummary
 
     void setQueryFn(QueryFn fn);
     void setStatusFn(StatusFn fn);
@@ -49,6 +54,7 @@ public:
     void setAddedSource(AddedSource fn);
     void setAddExeDialog(AddExeDialog fn);
     void setAddEntryStore(AddEntryStore fn);
+    void setSummaryFn(SummaryFn fn);
     // WR-05 test seam: run workers on a DEDICATED pool (controlled thread
     // count, no contention from other suites) instead of the shared global
     // QtConcurrent pool. nullptr (default) → global pool (production).
@@ -65,6 +71,7 @@ public:
 
     QString statusText() const; // D-17 locked copy (RESEARCH §9), "" when Idle
     bool indexerOk() const;     // state() == Idle (D-18 row gate)
+    QString lastScanSummary() const; // 07-06 live UI-thread read; "" = never scanned
 
 signals:
     // D-15: results carry the generation; ResultsModel::setFileResults (04-04)
@@ -95,6 +102,7 @@ private:
     AddedSource m_addedSource;
     AddExeDialog m_addExeDialog;
     AddEntryStore m_addEntryStore;
+    SummaryFn m_summaryFn;
     QString m_query;                 // UI thread only — re-dispatch target for addExecutable
     QTimer m_debounce;               // single-shot, 150ms, UI thread only
     QFutureWatcher<WorkerResult> m_watcher;

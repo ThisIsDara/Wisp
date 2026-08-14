@@ -721,8 +721,13 @@ Item {
                         }
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
+                            // 07-06: a completed scan shows its summary ("Last
+                            // scan HH:mm — N entries") so picking a folder has
+                            // visible confirmation; never scanned → the hint.
                             text: resultsModel.query === ""
-                                  ? "No files here yet — select a folder to scan"
+                                  ? (fileSearch.lastScanSummary !== ""
+                                     ? fileSearch.lastScanSummary
+                                     : "No files here yet — select a folder to scan")
                                   : "No results for \"" + resultsModel.query + "\""
                             font.pixelSize: Theme.fontSizeTitle
                             font.weight: Theme.fontWeightRegular

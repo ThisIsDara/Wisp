@@ -66,6 +66,7 @@ private slots:
     void trackedSourceMerged_D06();
     void addExecutableRedispatches_D11();
     void quietFillIn_D13();
+    void lastScanSummaryProxied_0706();
 
 private:
     // WR-05: dedicated pool — controlled thread count, zero contention from
@@ -401,6 +402,23 @@ void TstFileSearch::quietFillIn_D13()
 
     QCOMPARE(results.count(), 0); // quiet fill-in (D-13): nothing fires early
     QCOMPARE(changed.count(), 0); // no indicator signals exist by construction
+}
+
+void TstFileSearch::lastScanSummaryProxied_0706()
+{
+    // 07-06: lastScanSummary proxies the injected summary fn live on the UI
+    // thread ("" when unset / never scanned). No dispatch needed — it's a
+    // plain getter, not a worker read.
+    FileSearch fs;
+    fs.setPool(&m_pool);
+    QCOMPARE(fs.lastScanSummary(), QString()); // no seam → "" (never scanned)
+
+    QString summary = QStringLiteral("Last scan 14:32 — 1,234 entries");
+    fs.setSummaryFn([&] { return summary; });
+    QCOMPARE(fs.lastScanSummary(), summary);   // live read, no debounce/wait
+
+    summary = QStringLiteral("Last scan 14:40 — 2,000 entries"); // scan completed
+    QCOMPARE(fs.lastScanSummary(), summary);   // getter re-reads the fresh value
 }
 
 QTEST_MAIN(TstFileSearch)
