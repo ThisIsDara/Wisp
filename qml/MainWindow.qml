@@ -8,7 +8,7 @@ Window {
     title: "wisp"
     flags: Qt.Tool | Qt.FramelessWindowHint
     width: Theme.windowWidth      // 680 = surface 648 + 2×16 shadow margin
-    height: Theme.windowHeight    // 432
+    height: Theme.windowHeight    // 472
     color: "transparent"
     visible: false   // D-02.1: resident — starts hidden, hotkey summons it
 
@@ -360,8 +360,8 @@ Window {
         Rectangle {
             id: surface
             anchors.centerIn: parent
-            width: Theme.surfaceWidth     // 640
-            height: Theme.surfaceHeight   // 400
+            width: Theme.surfaceWidth     // 648
+            height: Theme.surfaceHeight   // 440
             radius: Theme.radiusSurface
             color: Theme.surface
             border.color: Theme.border
@@ -419,19 +419,45 @@ Window {
                 Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
             }
 
-            // ── Results list (LAUN-05) ──
-            ListView {
-                id: resultsView
+            // ── Results list frame (LAUN-05) — neon/cyberpunk panel ──
+            // A thin dim-orange halo OUTSIDE the bright orange frame reads as
+            // a neon tube with zero blur cost (D-06: never blur the hot path).
+            // The dark panel (listBg — darker than the surface) sits inset
+            // from the shell by spaceSm — the "small layout around the list".
+            Rectangle {
+                id: listHalo
+                anchors.fill: listFrame
+                anchors.margins: -3
+                color: "transparent"
+                border.color: Theme.listOutlineDim
+                border.width: 1
+                z: 0
+            }
+            Rectangle {
+                id: listFrame
                 anchors.top: searchField.bottom
                 anchors.topMargin: Theme.spaceSm
                 anchors.left: parent.left
+                anchors.leftMargin: Theme.spaceSm
                 anchors.right: parent.right
+                anchors.rightMargin: Theme.spaceSm
                 anchors.bottom: resultsModel.hiddenCount > 0 ? showHiddenRow.top : addFolderRow.top
-                // 2026-08-11: leftMargin 0 — the selection tick hugs the
-                // surface's left edge (the delegate's inner 16px icon margin
-                // keeps the content column optically identical).
-                anchors.leftMargin: 0
+                anchors.bottomMargin: Theme.spaceSm
+                color: Theme.listBg
+                border.color: Theme.listOutline
+                border.width: Theme.listOutlineWidth
+                radius: 0
+                z: 0
+            }
+            ListView {
+                id: resultsView
+                // Tight inner padding so rows sit INSIDE the orange border;
+                // the frame's own spaceSm margin is the outer "layout".
+                anchors.fill: listFrame
+                anchors.leftMargin: Theme.spaceXs
                 anchors.rightMargin: Theme.spaceXs
+                anchors.topMargin: Theme.spaceXs
+                anchors.bottomMargin: Theme.spaceXs
                 clip: true
                 focus: false                 // keys live on the shell
                 keyNavigationEnabled: false  // shell owns ↑/↓ — never the view

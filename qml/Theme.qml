@@ -5,6 +5,14 @@ QtObject {
     // --- Color (UI-SPEC Color section) ---
     readonly property color surface: "#1E1E1E"          // dominant 60% — window surface
     readonly property color surfaceSecondary: "#2D2D30" // secondary 30% — inset wells (Phase 3)
+    // Neon/cyberpunk results-list panel (2026-08-15): listBg is DARKER than
+    // surface (the "darker list" ask); listOutline is the bright neon-orange
+    // frame border; listOutlineDim is the halo ring just outside it (reads as
+    // a neon tube with zero blur cost — D-06 never blurs the hot path).
+    readonly property color listBg: "#141414"             // results panel — darker than surface
+    readonly property color listOutline: "#FF7A00"        // neon-orange frame border
+    readonly property color listOutlineDim: "#9C5400"     // dim halo ring outside the frame
+    readonly property int listOutlineWidth: 2             // neon frame border width
     readonly property color border: "#3F3F46"           // 1px surface hairline
     // D-13/D-15/D-16: the SINGLE mutable color source. The initializer IS the
     // silent fallback — missing/corrupt wisp.ini accent resolves to this
@@ -61,7 +69,7 @@ QtObject {
     readonly property int space3xl: 48
     readonly property int space4xl: 64
     readonly property int rowHeight: 44                  // declared exception (Phase 3 rows)
-    readonly property int radiusSurface: 12              // declared exception — window corner radius
+    readonly property int radiusSurface: 0               // declared exception — sharp corner (cyberpunk / neon redesign)
 
     // --- Phase-5 spacing tokens (declared sub-grid exceptions — UI-SPEC Spacing) ---
     readonly property int iconSize: 32            // icon slot (D-01) — same slot as the 32px monogram
@@ -177,7 +185,7 @@ QtObject {
 
     // --- Window geometry (UI-SPEC Geometry contract) ---
     readonly property int surfaceWidth: 648
-    readonly property int surfaceHeight: 400
+    readonly property int surfaceHeight: 440
     readonly property int shadowMargin: 16                // window canvas = surface + 2×margin
     readonly property int windowWidth: surfaceWidth + shadowMargin * 2   // 680
     readonly property int windowHeight: surfaceHeight + shadowMargin * 2 // 432

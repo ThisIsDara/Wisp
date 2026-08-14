@@ -51,7 +51,7 @@ void ShellTest::windowContract()
     QVERIFY2(window->flags().testFlag(Qt::FramelessWindowHint), "flags must include Qt::FramelessWindowHint");
 
     QCOMPARE(window->width(), 680);     // Theme window canvas: surface 648 + 2x16 shadow margin
-    QCOMPARE(window->height(), 432);
+    QCOMPARE(window->height(), 472);
     QCOMPARE(window->title(), QStringLiteral("wisp"));
     QCOMPARE(window->color(), QColor(Qt::transparent));
 }
@@ -90,7 +90,7 @@ void ShellTest::themeTokens()
     QCOMPARE(obj->property("animCloseDuration").toInt(), 140);
     QCOMPARE(obj->property("easingOpen").toInt(), int(QEasingCurve::OutCubic));   // 6 in Qt 6.11
     QCOMPARE(obj->property("rowHeight").toInt(), 44);
-    QCOMPARE(obj->property("radiusSurface").toInt(), 12);
+    QCOMPARE(obj->property("radiusSurface").toInt(), 0);
     QCOMPARE(obj->property("windowWidth").toInt(), 680);
 }
 
