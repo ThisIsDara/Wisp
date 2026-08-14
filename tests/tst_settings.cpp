@@ -23,6 +23,13 @@ private slots:
     void accentChangedEmitted();
     void persistsAcrossInstances();
     void invalidSetIgnored();
+
+    // 07-05 scan settings: normalized-root persistence (Pitfall 5), empty/
+    // duplicate cleaning, clamped interval (OQ4), INI durability.
+    void scanRootsRoundTrip();
+    void scanRootsDropsEmptyAndDuplicates();
+    void scanIntervalClamped();
+    void scanKeysSurviveReopen();
 };
 
 void TstSettings::missingKeyDefaultsTo0078D4()
@@ -105,6 +112,73 @@ void TstSettings::invalidSetIgnored()
 
     QCOMPARE(store.accent(), QColor("#0078D4")); // unchanged
     QCOMPARE(spy.count(), 0);                    // no notify for a no-op
+}
+
+// ── 07-05 scan settings ──
+
+void TstSettings::scanRootsRoundTrip()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString iniPath = dir.filePath(QStringLiteral("wisp.ini"));
+
+    // QFileDialog yields '/'-separated paths — Pitfall 5: they must come
+    // back as native separators (the form walkAndDelta memo keys use).
+    const auto desktop = QStringLiteral("C:/Users/me/Desktop");
+    const auto drive = QStringLiteral("D:");
+    const auto expectedNative = QStringList{ QStringLiteral("C:\\Users\\me\\Desktop"),
+                                             QStringLiteral("D:") };
+    SettingsStore store(iniPath);
+    store.setScanRoots({ desktop, drive });
+    QCOMPARE(store.scanRoots(), expectedNative);
+}
+
+void TstSettings::scanRootsDropsEmptyAndDuplicates()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString iniPath = dir.filePath(QStringLiteral("wisp.ini"));
+
+    const QStringList expected = QStringList{ QStringLiteral("C:\\a"), QStringLiteral("C:\\b") };
+    SettingsStore store(iniPath);
+    store.setScanRoots({ QStringLiteral(""), QStringLiteral("C:/a"),
+                         QStringLiteral("C:/a"), QStringLiteral("C:/b") });
+    QCOMPARE(store.scanRoots(), expected);
+}
+
+void TstSettings::scanIntervalClamped()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString iniPath = dir.filePath(QStringLiteral("wisp.ini"));
+
+    SettingsStore store(iniPath);
+    QCOMPARE(store.scanIntervalMinutes(), 10); // missing key → D-09 default
+
+    store.setScanIntervalMinutes(0);
+    QCOMPARE(store.scanIntervalMinutes(), 1); // OQ4 floor
+    store.setScanIntervalMinutes(5000);
+    QCOMPARE(store.scanIntervalMinutes(), 1440); // OQ4 ceiling
+    store.setScanIntervalMinutes(10);
+    QCOMPARE(store.scanIntervalMinutes(), 10);
+}
+
+void TstSettings::scanKeysSurviveReopen()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString iniPath = dir.filePath(QStringLiteral("wisp.ini"));
+
+    SettingsStore store1(iniPath);
+    store1.setScanRoots({ QStringLiteral("C:\\Apps") });
+    store1.setScanIntervalMinutes(30);
+
+    // NEW instance on the same ini path → both keys persisted to disk
+    // (durability round-trip, not in-memory state).
+    const QStringList expectedRoots = QStringList{ QStringLiteral("C:\\Apps") };
+    SettingsStore store2(iniPath);
+    QCOMPARE(store2.scanRoots(), expectedRoots);
+    QCOMPARE(store2.scanIntervalMinutes(), 30);
 }
 
 QTEST_MAIN(TstSettings)
