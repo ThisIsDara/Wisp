@@ -17,7 +17,6 @@ qt_add_library(wisp_core STATIC
     src/win/WinStartMenuEnumerator.cpp
     src/win/WinUwpEnumerator.cpp
     src/win/WinLaunch.cpp
-    src/win/WinSearchQuery.cpp
     src/win/WinIconExtractor.cpp
     src/win/WinUwpLogo.cpp
     src/win/WinSingleInstance.cpp
@@ -139,10 +138,6 @@ if(BUILD_TESTING)
     target_link_libraries(tst_tray PRIVATE Qt6::Widgets Qt6::Gui Qt6::Test)
     add_test(NAME tst_tray COMMAND tst_tray)
 
-    qt_add_executable(tst_search tests/tst_search.cpp)
-    target_link_libraries(tst_search PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
-    add_test(NAME tst_search COMMAND tst_search)
-
     qt_add_executable(tst_filesearch tests/tst_filesearch.cpp)
     target_link_libraries(tst_filesearch PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
     add_test(NAME tst_filesearch COMMAND tst_filesearch)
@@ -186,7 +181,7 @@ if(BUILD_TESTING)
     set_tests_properties(
         tst_shell tst_hotkey tst_launcher tst_capture tst_singleinstance
         tst_matcher tst_model
-        tst_enum tst_catalog tst_launch tst_tray tst_search tst_filesearch
+        tst_enum tst_catalog tst_launch tst_tray tst_filesearch
         tst_scan tst_index
         tst_history tst_icons tst_iconcache tst_settings tst_autostart
         tst_curation

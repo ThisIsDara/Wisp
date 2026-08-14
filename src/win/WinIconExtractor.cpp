@@ -13,7 +13,8 @@
 
 namespace {
 
-// Minimal COM ownership guard (WinSearchQuery.cpp:21-44 shape). The icon
+// Minimal COM ownership guard (RAII shape from the deleted Phase-04
+// search-query precedent). The icon
 // chain spans up to 3 interfaces with a failure exit at every step; RAII is
 // the only release discipline that guarantees "release on every path".
 template <typename T>
