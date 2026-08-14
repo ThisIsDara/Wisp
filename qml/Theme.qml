@@ -111,9 +111,9 @@ QtObject {
     readonly property int settingsRowAutostart: 64
     readonly property int settingsRowGap: 12      // spaceMd — declared (not 16; vertical budget 488 <= 528)
     readonly property int settingsPad: 24         // content column margins (spaceXl)
-    // "Scan locations" section (07-05, D-10): 18 title + 8 + 56 roots + 8 +
-    // 28 interval + 8 + 28 action = 154 within 158.
-    readonly property int settingsRowScan: 158
+    // "Scan locations" section (07-06): 28 add + 8 + 56 roots + 8 + 28
+    // interval + 8 + 28 action = 164 within 170 (add row added 07-06).
+    readonly property int settingsRowScan: 170
     readonly property int settingsRowScanItem: 28 // per-root row / interval row / action row height
     readonly property int settingsRowScanRoots: 56 // visible root-list height (2 rows of 28)
     // Autostart toggle (UI-SPEC Color interaction tokens)

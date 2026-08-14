@@ -418,7 +418,7 @@ Window {
                 anchors.topMargin: Theme.spaceSm
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.bottom: resultsModel.hiddenCount > 0 ? showHiddenRow.top : addExeRow.top
+                anchors.bottom: resultsModel.hiddenCount > 0 ? showHiddenRow.top : addFolderRow.top
                 // 2026-08-11: leftMargin 0 — the selection tick hugs the
                 // surface's left edge (the delegate's inner 16px icon margin
                 // keeps the content column optically identical).
@@ -545,7 +545,7 @@ Window {
             Rectangle {
                 id: showHiddenRow
                 visible: resultsModel.hiddenCount > 0
-                anchors.bottom: addExeRow.top
+                anchors.bottom: addFolderRow.top
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: Theme.rowHeight
@@ -574,6 +574,53 @@ Window {
                     font.pixelSize: Theme.fontSizeTitle
                     font.weight: Theme.fontWeightRegular
                     color: Theme.textSecondary
+                }
+            }
+
+            // ── Pinned "Add folder to scan…" row (07-06) — always visible,
+            // same pattern as Add executable… below: click-only, no focus,
+            // never part of the model. Wired in main.cpp (picker → store →
+            // scan). Sits ABOVE "Add executable…" — scanning folders is the
+            // launcher's primary inventory path (07-06 pivot).
+            Rectangle {
+                id: addFolderRow
+                anchors.bottom: addExeRow.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: Theme.rowHeight
+                color: addFolderArea.containsMouse ? Theme.surfaceSecondary : "transparent"
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: Theme.border
+                }
+                MouseArea {
+                    id: addFolderArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: launcherController.addScanRoot()
+                }
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: Theme.spaceLg   // aligns with the list's icon column
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.spaceXs
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "\uE8B7" // MDL2 "Folder"
+                        font.family: "Segoe MDL2 Assets"
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        color: addFolderArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Add folder to scan…"
+                        font.pixelSize: Theme.fontSizeTitle
+                        font.weight: Theme.fontWeightRegular
+                        color: addFolderArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                    }
                 }
             }
 

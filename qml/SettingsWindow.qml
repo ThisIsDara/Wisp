@@ -109,10 +109,10 @@ Window {
         border.width: 1
         clip: true
 
-        // Content column — vertical budget 488 <= 528 (UI-SPEC declared;
-        // 07-05: +158 scan section, was 318 <= 328):
-        // 24 pad + 18 header + 12 + 64 + 12 + 88 + 12 + 64 + 12 + 158 + 24 pad
-        // = 488; column content 440 <= 480 column height — 40px slack, no
+        // Content column — vertical budget 500 <= 528 (UI-SPEC declared;
+        // 07-06: +170 scan section, was 318 <= 328):
+        // 24 pad + 18 header + 12 + 64 + 12 + 88 + 12 + 64 + 12 + 170 + 24 pad
+        // = 500; column content 452 <= 480 column height — 28px slack, no
         // clipping (research OQ1: growth via tokens, not a ScrollView).
         Column {
             anchors.fill: parent
@@ -402,13 +402,43 @@ Window {
                     }
                 }
 
-                // Right-side controls: roots list (or empty placeholder),
-                // interval row, action row — stacked, 56+8+28+8+28 = 128 <= 158.
-                Column {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.spaceSm
-                    width: 260
+// Right-side controls: roots list (or empty placeholder),
+                    // add-folder button, interval row, action row — stacked,
+                    // 28+8+56+8+28+8+28 = 164 <= 170.
+                    Column {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Theme.spaceSm
+                        width: 260
+
+                        // "Add folder" button (07-06) — the primary
+                        // inventory action; the placeholder text below says
+                        // "add one below" and THIS is what it points at.
+                        Rectangle {
+                            width: parent.width
+                            height: Theme.settingsRowScanItem
+                            radius: Theme.fieldRadius
+                            color: addFolderBtn.containsMouse ? Theme.hoverBg : Theme.surfaceSecondary
+                            border.color: Theme.border
+                            border.width: 1
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Add folder…"
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightSemibold
+                                color: addFolderBtn.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            }
+                            MouseArea {
+                                id: addFolderBtn
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    if (settingsController)
+                                        settingsController.addScanRoot()
+                                }
+                            }
+                        }
 
                     // Root list — height-capped (research Pitfall 3: no
                     // full-height ListView), token-driven height.
