@@ -415,19 +415,20 @@ Window {
                 }
             }
             // Search-field focus identity (2026-08-15 UI pass): a 2px
-            // accentLight underline that fades in while the field owns focus
-            // (the field is focused on every open — LAUN-05 — so this bar IS
-            // the launcher's live state). Replaces the old static hairline —
-            // a dead 1px separator under the hero field read as "border",
-            // not "ready". Fades via the shared 120ms opacity-only
-            // micro-animation contract; overlays the 8px list gap, never
-            // participates in layout.
+            // neon-orange underline (appOutline — matches the app outline and
+            // separators; the user dropped the accent-blue here, 2026-08-15)
+            // that fades in while the field owns focus (the field is focused
+            // on every open — LAUN-05 — so this bar IS the launcher's live
+            // state). Replaces the old static hairline — a dead 1px separator
+            // under the hero field read as "border", not "ready". Fades via
+            // the shared 120ms opacity-only micro-animation contract; overlays
+            // the 8px list gap, never participates in layout.
             Rectangle {
                 anchors.top: searchField.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: Theme.searchUnderlineHeight
-                color: Theme.accentLight
+                color: Theme.appOutline
                 opacity: searchField.activeFocus ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
             }
