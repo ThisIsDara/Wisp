@@ -1,14 +1,19 @@
 #include <QDir>
 #include <QFile>
+#include <QRegularExpression>
 #include <QStringList>
+#include <QThread>
+#include <QThreadPool>
 #include <QTemporaryDir>
 #include <QtTest>
 
 #include <windows.h>
 
+#include <atomic>
 #include <memory>
 
 #include "core/FileIndex.h"
+#include "core/ScanService.h"
 #include "win/WinDirectoryWalk.h"
 
 // Scan seam contract (07-01 task 3): FileIndex wired to the REAL
@@ -29,11 +34,26 @@ private slots:
     void persistThenRequery();
     void corruptIndexFileTolerated();
 
+    // 07-03 ScanService orchestration: single-flight + coalesce, state
+    // machine, UI-thread snapshot discipline, no-scan-at-boot, summary.
+    void scanPopulatesIndexAndSummary();
+    void singleFlightCoalescesConcurrentScans();
+    void noRootsClearsIndexAndState();
+    void failedListingMapsErrorState();
+    void snapshotReadOnUiThread_Pitfall4();
+    void startArmsTimerOnlyWithRoots();
+    void refreshIntervalReadsFreshSnapshot();
+
 private:
     // Recreated per test — fixtures must never leak between cases.
     std::unique_ptr<QTemporaryDir> m_dir;
     QString m_root;
     QString m_indexPath;
+
+    // WR-05 convention: dedicated pool — controlled threads, zero contention
+    // on the shared global QtConcurrent pool.
+    QThreadPool m_pool;
+    static constexpr int kWaitGenerous = 5000; // QSignalSpy::wait timeout — load-proof
 };
 
 void TstScan::init()
@@ -143,6 +163,268 @@ void TstScan::corruptIndexFileTolerated()
     QVERIFY(!index.load()); // truncated garbage → false, never a crash
     QCOMPARE(index.entryCount(), 0);
     QVERIFY(index.queryCandidates(QStringLiteral("x")).isEmpty());
+}
+
+// ── 07-03 ScanService orchestration ──
+
+namespace {
+
+// Shared fake-tree helper: root with one .exe and one dir; the dir holds a
+// non-exe (indexed as a folder entry only) → exactly 2 index entries, no
+// failed listings → Idle end-state for the happy path.
+QHash<QString, WinDirectoryWalk::WinDirListing> scanFixtureMap(const QString &root)
+{
+    WinDirectoryWalk::WinDirEntry exe;
+    exe.name = QStringLiteral("app.exe");
+    exe.lastWriteMs = 10;
+    WinDirectoryWalk::WinDirEntry sub;
+    sub.name = QStringLiteral("sub");
+    sub.isDir = true;
+    sub.lastWriteMs = 21;
+    WinDirectoryWalk::WinDirListing rootListing;
+    rootListing.entries = { exe, sub };
+    rootListing.lastWriteMs = 5;
+    rootListing.ok = true;
+
+    WinDirectoryWalk::WinDirEntry dll;
+    dll.name = QStringLiteral("lib.dll");
+    dll.lastWriteMs = 30;
+    WinDirectoryWalk::WinDirListing subListing;
+    subListing.entries = { dll };
+    subListing.lastWriteMs = 21;
+    subListing.ok = true;
+
+    return { { root, rootListing }, { root + QStringLiteral("\\sub"), subListing } };
+}
+
+// Mutable fake settings — tests mutate it to flip roots between scans.
+struct MutableSettingsHolder {
+    QStringList roots;
+};
+
+} // namespace
+
+void TstScan::scanPopulatesIndexAndSummary()
+{
+    const QString root = QStringLiteral("C:\\Root");
+    auto map = scanFixtureMap(root);
+    auto listFn = [&map](const QString &p) { return map.value(p); };
+
+    MutableSettingsHolder settings;
+    settings.roots = { root };
+
+    FileIndex index(m_indexPath);
+    ScanService service;
+    service.setIndex(&index);
+    service.setListFn(listFn);
+    service.setSettingsSource(
+        [&settings] { return ScanService::ScanSettings{ settings.roots, 10 }; });
+    service.setPool(&m_pool);
+
+    QSignalSpy spy(&service, &ScanService::scanStateChanged);
+    service.requestScan();
+    QVERIFY(spy.wait(kWaitGenerous));
+
+    QCOMPARE(index.entryCount(), 2); // app.exe + sub (lib.dll not indexed)
+    QCOMPARE(service.stateOrdinal(), int(ScanService::Idle));
+    QVERIFY(QRegularExpression(QStringLiteral("^Last scan \\d{2}:\\d{2} — 2 entries$"))
+                .match(service.lastScanSummary())
+                .hasMatch());
+}
+
+void TstScan::singleFlightCoalescesConcurrentScans()
+{
+    const QString root = QStringLiteral("C:\\Root");
+    auto map = scanFixtureMap(root);
+    std::atomic<int> rootCalls{ 0 };
+    std::atomic<int> subCalls{ 0 };
+    auto listFn = [&map, &rootCalls, &subCalls](const QString &p) {
+        if (p.endsWith(QStringLiteral("\\sub")))
+            subCalls.fetch_add(1);
+        else if (rootCalls.fetch_add(1) == 0)
+            QThread::msleep(300); // first walk is slow — the second request lands mid-flight
+        return map.value(p);
+    };
+    MutableSettingsHolder settings;
+    settings.roots = { root };
+
+    FileIndex index(m_indexPath);
+    ScanService service;
+    service.setIndex(&index);
+    service.setListFn(listFn);
+    service.setSettingsSource(
+        [&settings] { return ScanService::ScanSettings{ settings.roots, 10 }; });
+    service.setPool(&m_pool);
+
+    QSignalSpy spy(&service, &ScanService::scanStateChanged);
+    service.requestScan();
+    service.requestScan(); // mid-flight → coalesced follow-up, never a queue
+
+    // Walk 1 (slow): root + sub. Coalesced walk 2: root re-listed, sub
+    // memo-skipped (unchanged mtimes). ⇒ root==2, sub==1, total==3.
+    // A broken single-flight would run walk 2 CONCURRENTLY → root==2,
+    // sub==2, total==4. The exact counts discriminate serial coalescing.
+    QTRY_COMPARE_WITH_TIMEOUT(rootCalls.load(), 2, kWaitGenerous);
+    QTRY_COMPARE_WITH_TIMEOUT(subCalls.load(), 1, kWaitGenerous);
+    QTRY_COMPARE_WITH_TIMEOUT(service.stateOrdinal(), int(ScanService::Idle),
+                              kWaitGenerous); // final walk fully applied
+    QCOMPARE(index.entryCount(), 2); // consistent end state
+    QCOMPARE(service.stateOrdinal(), int(ScanService::Idle));
+    QVERIFY(spy.count() >= 2); // at least one Scanning→Idle round trip
+}
+
+void TstScan::noRootsClearsIndexAndState()
+{
+    const QString root = QStringLiteral("C:\\Root");
+    auto map = scanFixtureMap(root);
+    auto listFn = [&map](const QString &p) { return map.value(p); };
+    MutableSettingsHolder settings;
+    settings.roots = { root };
+
+    FileIndex index(m_indexPath);
+    ScanService service;
+    service.setIndex(&index);
+    service.setListFn(listFn);
+    service.setSettingsSource(
+        [&settings] { return ScanService::ScanSettings{ settings.roots, 10 }; });
+    service.setPool(&m_pool);
+
+    service.requestScan();
+    {
+        QSignalSpy spy(&service, &ScanService::scanStateChanged);
+        QVERIFY(spy.wait(kWaitGenerous)); // wait (generous) for completion
+    }
+    QCOMPARE(index.entryCount(), 2);
+
+    // Roots removed → the next scan wipes the index (no locations semantics).
+    settings.roots.clear();
+    QSignalSpy spy(&service, &ScanService::scanStateChanged);
+    service.requestScan();
+    QVERIFY(spy.wait(kWaitGenerous));
+
+    QCOMPARE(service.stateOrdinal(), int(ScanService::NoRoots));
+    QCOMPARE(index.entryCount(), 0);
+}
+
+void TstScan::failedListingMapsErrorState()
+{
+    const QString root = QStringLiteral("C:\\Root");
+    auto listFn = [](const QString &) { return WinDirectoryWalk::WinDirListing{}; }; // ok=false
+    MutableSettingsHolder settings;
+    settings.roots = { root };
+
+    FileIndex index(m_indexPath);
+    ScanService service;
+    service.setIndex(&index);
+    service.setListFn(listFn);
+    service.setSettingsSource(
+        [&settings] { return ScanService::ScanSettings{ settings.roots, 10 }; });
+    service.setPool(&m_pool);
+
+    QSignalSpy spy(&service, &ScanService::scanStateChanged);
+    service.requestScan();
+    QVERIFY(spy.wait(kWaitGenerous));
+
+    QCOMPARE(service.stateOrdinal(), int(ScanService::Error));
+    QVERIFY(service.lastScanSummary().contains(QStringLiteral("1 location failed")));
+}
+
+void TstScan::snapshotReadOnUiThread_Pitfall4()
+{
+    const QString root = QStringLiteral("C:\\Root");
+    auto map = scanFixtureMap(root);
+    auto listFn = [&map](const QString &p) { return map.value(p); };
+    MutableSettingsHolder settings;
+    settings.roots = { root };
+
+    std::atomic<Qt::HANDLE> sourceThread{ nullptr };
+    FileIndex index(m_indexPath);
+    ScanService service;
+    service.setIndex(&index);
+    service.setListFn(listFn);
+    service.setSettingsSource([&settings, &sourceThread] {
+        sourceThread.store(QThread::currentThreadId());
+        return ScanService::ScanSettings{ settings.roots, 10 };
+    });
+    service.setPool(&m_pool);
+
+    QSignalSpy spy(&service, &ScanService::scanStateChanged);
+    service.requestScan();
+    QVERIFY(spy.wait(kWaitGenerous));
+
+    // Pitfall 4: the settings snapshot was read on the UI (test) thread —
+    // the worker never touched the source.
+    QCOMPARE(sourceThread.load(), QThread::currentThreadId());
+    QCOMPARE(index.entryCount(), 2);
+}
+
+void TstScan::startArmsTimerOnlyWithRoots()
+{
+    // (a) empty roots → NoRoots state, no timer, no scan, no crash.
+    {
+        MutableSettingsHolder settings; // roots empty
+        FileIndex index(m_indexPath);
+        ScanService service;
+        service.setIndex(&index);
+        service.setSettingsSource(
+            [&settings] { return ScanService::ScanSettings{ settings.roots, 10 }; });
+        service.setPool(&m_pool);
+
+        QSignalSpy spy(&service, &ScanService::scanStateChanged);
+        service.start();
+        QCOMPARE(service.stateOrdinal(), int(ScanService::NoRoots));
+        QCOMPARE(spy.count(), 1); // the Idle→NoRoots transition
+    }
+
+    // (b) roots present → timer armed, NO scan at boot (D-09): zero listFn
+    // calls, state stays Idle (no spurious emit).
+    {
+        const QString root = QStringLiteral("C:\\Root");
+        auto map = scanFixtureMap(root);
+        std::atomic<int> listCalls{ 0 };
+        auto listFn = [&map, &listCalls](const QString &p) {
+            listCalls.fetch_add(1);
+            return map.value(p);
+        };
+        MutableSettingsHolder settings;
+        settings.roots = { root };
+
+        FileIndex index(m_indexPath);
+        ScanService service;
+        service.setIndex(&index);
+        service.setListFn(listFn);
+        service.setSettingsSource(
+            [&settings] { return ScanService::ScanSettings{ settings.roots, 10 }; });
+        service.setPool(&m_pool);
+
+        QSignalSpy spy(&service, &ScanService::scanStateChanged);
+        service.start();
+        QCOMPARE(service.stateOrdinal(), int(ScanService::Idle)); // been Idle the whole time
+        QCOMPARE(listCalls.load(), 0); // D-09: no boot scan
+        QCOMPARE(spy.count(), 0);      // no spurious NOTIFY
+    }
+}
+
+void TstScan::refreshIntervalReadsFreshSnapshot()
+{
+    MutableSettingsHolder settings;
+    settings.roots = { QStringLiteral("C:\\Root") };
+
+    std::atomic<int> sourceCalls{ 0 };
+    FileIndex index(m_indexPath);
+    ScanService service;
+    service.setIndex(&index);
+    service.setSettingsSource([&settings, &sourceCalls] {
+        sourceCalls.fetch_add(1);
+        return ScanService::ScanSettings{ settings.roots, 10 };
+    });
+    service.setPool(&m_pool);
+
+    QSignalSpy spy(&service, &ScanService::scanStateChanged);
+    service.refreshInterval();
+    service.refreshInterval();
+    QCOMPARE(sourceCalls.load(), 2); // fresh snapshot each call
+    QCOMPARE(spy.count(), 0);        // state untouched
 }
 
 QTEST_MAIN(TstScan)
