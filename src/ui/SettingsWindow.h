@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
+#include <functional>
 
 class QEvent;
 class QPropertyAnimation;
@@ -13,6 +15,7 @@ class QTimer;
 class AutostartManager;
 class HotkeyCaptureDialog;
 class HotkeyManager;
+class ScanService;
 class SettingsStore;
 
 // SYS-03 / D-01: the settings surface controller — a small QML host
@@ -31,14 +34,19 @@ class SettingsWindow : public QObject
     Q_OBJECT
     Q_PROPERTY(QString currentHotkey READ currentHotkey NOTIFY currentHotkeyChanged)
     Q_PROPERTY(bool autostartEnabled READ autostartEnabled NOTIFY autostartEnabledChanged)
+    Q_PROPERTY(QStringList scanRoots READ scanRoots NOTIFY scanRootsChanged)
+    Q_PROPERTY(int scanIntervalMinutes READ scanIntervalMinutes NOTIFY scanIntervalChanged)
+    Q_PROPERTY(QString lastScanSummary READ lastScanSummary NOTIFY lastScanSummaryChanged)
 
 public:
     // All collaborators are injected (no store reach-in, no service lookup):
-    // the shared engine, the three stores, and the EXISTING capture dialog
-    // (main.cpp owns it — the hotkey-row click reopens it unchanged).
+    // the shared engine, the three stores, the EXISTING capture dialog, and
+    // the ScanService (main.cpp owns all of them — this controller only
+    // mediates, 07-05).
     explicit SettingsWindow(QQmlEngine *engine, SettingsStore *settingsStore,
                             AutostartManager *autostart, HotkeyManager *hotkeys,
-                            HotkeyCaptureDialog *capture, QObject *parent = nullptr);
+                            HotkeyCaptureDialog *capture, ScanService *scanService,
+                            QObject *parent = nullptr);
 
     // Center → fade-in (120ms) → requestActivate; refreshes autostart +
     // hotkey state first (D-10: state read when settings opens).
@@ -56,11 +64,29 @@ public:
     Q_INVOKABLE void toggleAutostart();                   // → AutostartManager::setEnabled(!isEnabled)
     Q_INVOKABLE void openHotkeyCapture();                 // → existing HotkeyCaptureDialog
     Q_INVOKABLE void openColorDialog();                   // staged ColorDialog (06-02)
+    // ── Scan locations (07-05, D-10): native-picker root add/remove, ±
+    // interval selector, manual scan — all via ScanService + SettingsStore ──
+    Q_INVOKABLE QStringList scanRoots() const;            // live store read
+    Q_INVOKABLE int scanIntervalMinutes() const;          // live store read
+    Q_INVOKABLE QString lastScanSummary() const;          // ScanService live summary
+    Q_INVOKABLE void addScanRoot();                       // native picker → store → requestScan
+    Q_INVOKABLE void removeScanRoot(int index);           // store → requestScan (empty → NoRoots)
+    Q_INVOKABLE void setScanInterval(int minutes);        // store → refreshInterval
+    Q_INVOKABLE void scanNow();                           // → requestScan (single-flight gate)
+
+    // 07-05 seam: the native folder picker (QFileDialog lives in QtWidgets,
+    // which wisp_core does not link — main.cpp wires it, mirroring
+    // FileSearch::setAddExeDialog). Default = no-op → addScanRoot cancels.
+    using FolderPicker = std::function<QString()>;
+    void setFolderPicker(FolderPicker fn);
 
 signals:
     void currentHotkeyChanged();
     void autostartEnabledChanged();
     void settingsVisibleChanged(bool visible);
+    void scanRootsChanged();
+    void scanIntervalChanged();
+    void lastScanSummaryChanged();
 
 protected:
     // Window-level Esc → close() (the QML surface has no key handler of its
@@ -73,12 +99,15 @@ private:
     void startGraceTimer();
     void onGraceTimeout();
     bool anotherOfOurWindowsIsActive() const;  // launcher / color dialog exemption
+    void refreshScanState();                   // re-emit the three scan NOTIFYs (live reads)
 
     QQmlEngine *m_engine;
     SettingsStore *m_settingsStore;
     AutostartManager *m_autostart;
     HotkeyManager *m_hotkeys;
     HotkeyCaptureDialog *m_capture;
+    ScanService *m_scanService;
+    FolderPicker m_folderPicker;
     QPointer<QQuickWindow> m_window;
     QPointer<QQuickWindow> m_colorDialog;
     QTimer *m_graceTimer;

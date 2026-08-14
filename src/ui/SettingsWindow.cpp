@@ -1,5 +1,6 @@
 #include "ui/SettingsWindow.h"
 
+#include <QDir>
 #include <QEvent>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -13,6 +14,7 @@
 
 #include "core/AutostartManager.h"
 #include "core/HotkeyManager.h"
+#include "core/ScanService.h"
 #include "core/SettingsStore.h"
 #include "ui/HotkeyCaptureDialog.h"
 
@@ -27,13 +29,15 @@ constexpr int kFadeMs = 120;
 
 SettingsWindow::SettingsWindow(QQmlEngine *engine, SettingsStore *settingsStore,
                                AutostartManager *autostart, HotkeyManager *hotkeys,
-                               HotkeyCaptureDialog *capture, QObject *parent)
+                               HotkeyCaptureDialog *capture, ScanService *scanService,
+                               QObject *parent)
     : QObject(parent)
     , m_engine(engine)
     , m_settingsStore(settingsStore)
     , m_autostart(autostart)
     , m_hotkeys(hotkeys)
     , m_capture(capture)
+    , m_scanService(scanService)
 {
     // Hotkey-row handoff (D-03, success criterion 3): the EXISTING capture
     // dialog validates (F12/mod-only rejected) and surfaces conflicts via its
@@ -45,6 +49,13 @@ SettingsWindow::SettingsWindow(QQmlEngine *engine, SettingsStore *settingsStore,
                 m_hotkeys->setHotkey(QKeySequence(seq));
                 emit currentHotkeyChanged(); // live well text (QML binding)
             });
+
+    // 07-05: the last-scan summary follows scans LIVE while the window is
+    // open — the QML binding stays fresh without polling.
+    if (m_scanService) {
+        connect(m_scanService, &ScanService::scanStateChanged, this,
+                [this] { emit lastScanSummaryChanged(); });
+    }
 
     m_graceTimer = new QTimer(this);
     m_graceTimer->setSingleShot(true);
@@ -61,6 +72,7 @@ void SettingsWindow::open()
     // D-10: state is read when settings opens (and after every mutation).
     emit autostartEnabledChanged();
     emit currentHotkeyChanged();
+    refreshScanState();
 
     // UI-SPEC open sequence: center → fade-in (120ms) → requestActivate.
     centerOnPrimary(win);
@@ -126,6 +138,84 @@ void SettingsWindow::toggleAutostart()
     // The toggle reflects the operation's OUTCOME (UI-SPEC): the property
     // getter reads the store live, so a failed write stays visually off.
     emit autostartEnabledChanged();
+}
+
+QStringList SettingsWindow::scanRoots() const
+{
+    return m_settingsStore ? m_settingsStore->scanRoots() : QStringList();
+}
+
+int SettingsWindow::scanIntervalMinutes() const
+{
+    return m_settingsStore ? m_settingsStore->scanIntervalMinutes() : 10;
+}
+
+QString SettingsWindow::lastScanSummary() const
+{
+    return m_scanService ? m_scanService->lastScanSummary() : QString();
+}
+
+void SettingsWindow::addScanRoot()
+{
+    if (!m_settingsStore || !m_folderPicker)
+        return; // picker seam not wired → treat as cancelled
+    // D-05: roots come ONLY from the native folder picker — no free-text
+    // paths, no wildcards (T-07-04).
+    const QString dir = m_folderPicker();
+    if (dir.isEmpty())
+        return; // cancelled → nothing (D-11 cancel discipline)
+    QStringList roots = m_settingsStore->scanRoots();
+    if (roots.contains(QDir::toNativeSeparators(dir)))
+        return; // duplicate root → no-op (T-07-04)
+    roots.append(dir); // normalized inside setScanRoots (Pitfall 5)
+    m_settingsStore->setScanRoots(roots);
+    emit scanRootsChanged();
+    if (m_scanService)
+        m_scanService->requestScan(); // D-09: first scan after roots are added
+}
+
+void SettingsWindow::removeScanRoot(int index)
+{
+    if (!m_settingsStore)
+        return;
+    QStringList roots = m_settingsStore->scanRoots();
+    if (index < 0 || index >= roots.size())
+        return; // guard — never touch an out-of-range index
+    roots.removeAt(index);
+    m_settingsStore->setScanRoots(roots);
+    emit scanRootsChanged();
+    if (m_scanService)
+        m_scanService->requestScan(); // empty roots → walkAndDelta wipes → NoRoots
+}
+
+void SettingsWindow::setScanInterval(int minutes)
+{
+    if (!m_settingsStore)
+        return;
+    m_settingsStore->setScanIntervalMinutes(minutes); // clamp lives here (OQ4)
+    emit scanIntervalChanged();
+    if (m_scanService)
+        m_scanService->refreshInterval(); // re-arm the timer from a fresh snapshot
+}
+
+void SettingsWindow::scanNow()
+{
+    if (m_scanService)
+        m_scanService->requestScan(); // single-flight gate inside (07-03)
+}
+
+void SettingsWindow::refreshScanState()
+{
+    // D-10 "state read when settings opens": live reads re-emitted so the
+    // QML bindings re-resolve (SettingsWindow.h:52-53 precedent — no caching).
+    emit scanRootsChanged();
+    emit scanIntervalChanged();
+    emit lastScanSummaryChanged();
+}
+
+void SettingsWindow::setFolderPicker(FolderPicker fn)
+{
+    m_folderPicker = std::move(fn);
 }
 
 void SettingsWindow::openHotkeyCapture()

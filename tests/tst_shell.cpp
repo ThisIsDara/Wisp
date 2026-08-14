@@ -8,6 +8,7 @@
 
 #include "core/AutostartManager.h"
 #include "core/HotkeyManager.h"
+#include "core/ScanService.h"
 #include "core/SettingsStore.h"
 #include "ui/HotkeyCaptureDialog.h"
 #include "ui/SettingsWindow.h"
@@ -113,7 +114,8 @@ void ShellTest::settingsWindowContract()
     AutostartManager autostart; // read-only here — never toggled
     HotkeyManager hotkeys(iniPath); // never started — no OS registration
     HotkeyCaptureDialog capture(&engine);
-    SettingsWindow settings(&engine, &store, &autostart, &hotkeys, &capture);
+    ScanService scanService; // unwired — no pool/listFn; never started (no scans)
+    SettingsWindow settings(&engine, &store, &autostart, &hotkeys, &capture, &scanService);
 
     settings.open();
     QTest::qWait(250); // 120ms fade + activation handshake
@@ -121,7 +123,7 @@ void ShellTest::settingsWindowContract()
     QVERIFY2(settingsWin, "settings window must exist");
     QVERIFY2(settingsWin->isVisible(), "settings window must be visible after open()");
     QCOMPARE(settingsWin->width(), 480);   // UI-SPEC geometry
-    QCOMPARE(settingsWin->height(), 360);
+    QCOMPARE(settingsWin->height(), 560);
     QCOMPARE(settings.currentHotkey(), hotkeys.hotkey().toString());
     // The injected controller must reach the QML side: the currentHotkey
     // binding reads settingsController (readonly setProperty is a silent

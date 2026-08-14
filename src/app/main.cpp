@@ -264,7 +264,14 @@ int main(int argc, char *argv[])
     // the tray ONLY (no launcher affordance, D-04). All collaborators injected
     // (06-03 contract); hotkey-capture handoff reopens the EXISTING dialog.
     SettingsWindow settingsWindow(&engine, &settingsStore, &autostart,
-                                  &hotkeys, &capture, &app);
+                                  &hotkeys, &capture, &scanService, &app);
+    // 07-05: QFileDialog lives in QtWidgets (wisp_core does not link it) —
+    // the native folder picker is injected here (FileSearch::setAddExeDialog
+    // precedent, main.cpp:124-127).
+    settingsWindow.setFolderPicker([] {
+        return QFileDialog::getExistingDirectory(
+            nullptr, QStringLiteral("Add scan location"), QDir::homePath());
+    });
 
     if (window && QSystemTrayIcon::isSystemTrayAvailable()) {
         // ORDER IS LOAD-BEARING (HOTK-02 canonical scenario):
