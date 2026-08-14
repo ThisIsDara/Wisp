@@ -11,10 +11,10 @@ class QThreadPool;
 
 // File-search coordinator (D-12..D-18): debounced, generation-countered,
 // worker-thread file queries feeding ResultsModel::setFileResults (04-04).
-// Firewall-clean: no Win32/COM headers — all Windows Search detail arrives
-// via the injectable std::function seams (PATTERNS §2; AppCatalog analog §2).
-// Threading: worker (QtConcurrent pool) owns COM init + the status probe and
-// query (AppCatalog discipline); the UI-thread watcher-completion drops stale
+// Firewall-clean: no Win32/COM headers — all index/scan detail arrives via
+// the injectable std::function seams (PATTERNS §2; AppCatalog analog §2).
+// Threading: worker (QtConcurrent pool) owns the query + status probe
+// (AppCatalog discipline); the UI-thread watcher-completion drops stale
 // generations and emits. The debounce timer is UI-thread-only (D-12).
 class FileSearch : public QObject
 {
@@ -26,16 +26,18 @@ class FileSearch : public QObject
     Q_PROPERTY(bool indexerOk READ indexerOk NOTIFY stateChanged)
 
 public:
-    // D-17 locked states; ordinal order mirrors WinSearchQuery::IndexerState
-    // (04-01) — main.cpp maps explicitly, never casts blindly.
-    enum FileSearchState { Ok = 0, Disabled, Building, Unavailable };
+    // D-17 locked states; ordinal order mirrors ScanService::ScanState
+    // (07-03) — main.cpp maps explicitly, never casts blindly.
+    // Idle = index ready; NoRoots = no scan locations configured; Scanning =
+    // first/ongoing walk; Error = scan failed (some locations unreadable).
+    enum FileSearchState { Idle = 0, NoRoots, Scanning, Error };
 
     explicit FileSearch(QObject *parent = nullptr);
 
     // ── Injectable seams (defaults = no-op; main.cpp wires real, tests fake) ──
-    struct QueryResult { QVector<AppEntry> entries; bool failed = false; }; // failed → Unavailable (RESEARCH §2)
-    using QueryFn = std::function<QueryResult(const QString &query)>;       // index rows (D-09) — wired to WinSearchQuery::queryFiles
-    using StatusFn = std::function<int()>;                                  // FileSearchState ordinal — wired to WinSearchQuery::checkIndexStatus
+    struct QueryResult { QVector<AppEntry> entries; bool failed = false; }; // failed → Error (RESEARCH §2)
+    using QueryFn = std::function<QueryResult(const QString &query)>;       // index rows (D-01) — wired to FileIndex::queryCandidates
+    using StatusFn = std::function<int()>;                                  // FileSearchState ordinal — wired to ScanService::stateOrdinal
     using TrackedSource = std::function<QVector<AppEntry>()>;               // D-06/D-10 — wired to LaunchHistory::trackedExecutables
     using AddedSource = std::function<QVector<AppEntry>()>;                 // D-11 — wired to LaunchHistory::addedExecutables (default-list escape hatch)
     using AddExeDialog = std::function<QString()>;                          // D-11 native dialog; "" = cancelled
@@ -61,8 +63,8 @@ public:
     // re-dispatch (fresh generation) so the new exe appears right away.
     Q_INVOKABLE void addExecutable();
 
-    QString statusText() const; // D-17 locked copy (RESEARCH §9), "" when Ok
-    bool indexerOk() const;     // state() == Ok (D-18 row gate)
+    QString statusText() const; // D-17 locked copy (RESEARCH §9), "" when Idle
+    bool indexerOk() const;     // state() == Idle (D-18 row gate)
 
 signals:
     // D-15: results carry the generation; ResultsModel::setFileResults (04-04)
@@ -84,7 +86,7 @@ private:
         quint64 generation = 0;
         QString query;               // the query text this result was computed for (WR-03)
         QVector<AppEntry> files;
-        FileSearchState state = Ok;
+        FileSearchState state = Idle;
     };
 
     QueryFn m_queryFn;
@@ -98,6 +100,6 @@ private:
     QFutureWatcher<WorkerResult> m_watcher;
     QThreadPool *m_pool = nullptr;   // WR-05: nullptr → global pool (set in tests)
     quint64 m_generation = 0;        // UI thread only — ++ per dispatch
-    FileSearchState m_state = Ok;    // UI thread only
+    FileSearchState m_state = Idle;  // UI thread only
     static constexpr int kDebounceMs = 150; // D-12 roadmap range 120-150ms (locked at 150)
 };

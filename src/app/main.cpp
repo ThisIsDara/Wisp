@@ -7,6 +7,7 @@
 #include "core/AppCatalog.h"
 #include "core/AutostartManager.h"
 #include "core/CurationStore.h"
+#include "core/FileIndex.h"
 #include "core/FileSearch.h"
 #include "core/HotkeyManager.h"
 #include "core/IconCache.h"
@@ -15,19 +16,22 @@
 #include "core/LaunchHistory.h"
 #include "core/LauncherController.h"
 #include "core/ResultsModel.h"
+#include "core/ScanService.h"
 #include "core/SettingsStore.h"
 #include "tray/TrayIcon.h"
 #include "ui/HotkeyCaptureDialog.h"
 #include "ui/SettingsWindow.h"
+#include "win/WinDirectoryWalk.h"
 #include "win/WinFullscreenGuard.h"
 #include "win/WinIconExtractor.h"
-#include "win/WinSearchQuery.h"
 #include "win/WinSingleInstance.h"
 #include "win/WinStartMenuEnumerator.h"
 #include "win/WinUwpEnumerator.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileDialog>
+#include <QThreadPool>
 
 #include "FrameTimeProbe.h"
 
@@ -84,6 +88,21 @@ int main(int argc, char *argv[])
     CurationStore curationStore;    // 05.1: UI-thread-only hide/show store (CUR-02)
     AutostartManager autostart;     // 06-01: HKCU Run-key store (SYS-02, D-10/D-12)
 
+    // ── Phase-7 (07-04): local index + scan service — the D-01 backend swap ──
+    QThreadPool scanPool;                       // D-08: dedicated scan pool — never the global
+    scanPool.setMaxThreadCount(1);              // single-flight already serializes; 1 thread suffices
+    FileIndex index;                            // D-07: %APPDATA%\TID\wisp\wisp-index.dat
+    ScanService scanService;                    // D-08/D-09 orchestration
+
+    // D-09 startup load (A4 measurement): synchronous, BEFORE any seam wiring
+    // and BEFORE the first dispatch — a corrupt/absent file degrades to an
+    // empty index + first-scan path (Pitfall 8), never a crash. NO scan at
+    // boot: ScanService.start() (below) only arms the interval timer.
+    QElapsedTimer indexLoadTimer;
+    indexLoadTimer.start();
+    const bool indexLoaded = index.load();      // corrupt → false → empty index (Pitfall 8)
+    qInfo("index load: %lldms (ok=%d)", indexLoadTimer.elapsed(), int(indexLoaded));
+
     catalog.setScanners({ &WinStartMenuEnumerator::scanStartMenu,
                           &WinUwpEnumerator::scanUwpApps }); // 03-02 real scanners
     launch.setModel(&resultsModel);                          // D-12 snapshot source
@@ -93,32 +112,23 @@ int main(int argc, char *argv[])
 
     // ── Phase-4 (04-05): file-search + launch-tracking seams ──
     launch.setHistory(&history); // D-10: Launched outcomes recorded (04-03)
-    // Index rows → AppEntry (04-01 firewall; failure out-param → Unavailable,
-    // RESEARCH §2):
-    fileSearch.setQueryFn([](const QString &q) {
-        bool ok = false;
-        const QVector<WinSearchQuery::FileResult> rows = WinSearchQuery::queryFiles(q, &ok);
-        QVector<AppEntry> out;
-        out.reserve(rows.size());
-        for (const auto &r : rows) {
-            AppEntry e;
-            e.source = AppEntry::Source::File;
-            e.displayName = r.displayName;
-            e.targetPath = r.path;      // full path — subtitle + launch + reveal (D-02)
-            e.isFolder = r.isFolder;    // D-04
-            out.append(e);
-        }
-        return FileSearch::QueryResult{out, !ok};
+    // D-01: index rows → AppEntry via the local prefilter (subsequence
+    // superset — A3); the model re-ranks with FuzzyMatcher and caps at
+    // kMaxFileRows=5. Runs on the FileSearch worker — never the UI thread.
+    fileSearch.setQueryFn([&index](const QString &q) {
+        return FileSearch::QueryResult{
+            FileIndex::toEntries(index.queryCandidates(q), /*cap=*/100), /*failed=*/false };
     });
-    // D-16 on-query status — EXPLICIT ordinal map (never a blind cast):
-    fileSearch.setStatusFn([] {
-        switch (WinSearchQuery::checkIndexStatus()) {
-        case WinSearchQuery::IndexerState::Disabled:   return int(FileSearch::Disabled);
-        case WinSearchQuery::IndexerState::Building:   return int(FileSearch::Building);
-        case WinSearchQuery::IndexerState::Unavailable:return int(FileSearch::Unavailable);
-        case WinSearchQuery::IndexerState::Ok:         return int(FileSearch::Ok);
+    // D-16 on-query status — EXPLICIT ordinal map (never a blind cast) from
+    // ScanService::ScanState to FileSearchState (07-03 → 07-04 contract):
+    fileSearch.setStatusFn([&scanService] {
+        switch (scanService.stateOrdinal()) {
+        case int(ScanService::ScanState::NoRoots):   return int(FileSearch::FileSearchState::NoRoots);
+        case int(ScanService::ScanState::Scanning):  return int(FileSearch::FileSearchState::Scanning);
+        case int(ScanService::ScanState::Error):     return int(FileSearch::FileSearchState::Error);
+        case int(ScanService::ScanState::Idle):      return int(FileSearch::FileSearchState::Idle);
         }
-        return int(FileSearch::Unavailable);
+        return int(FileSearch::FileSearchState::Idle);
     });
     fileSearch.setTrackedSource([&history] { return history.trackedExecutables(); }); // D-06/D-10
     fileSearch.setAddExeDialog([] {                                                    // D-11 native dialog
@@ -126,6 +136,17 @@ int main(int argc, char *argv[])
                                             QDir::homePath(), QStringLiteral("Executables (*.exe)"));
     });
     fileSearch.setAddEntryStore([&history](const QString &path) { history.addExecutable(path); });
+
+    // ── Phase-7 (07-04): scan-service wiring (D-08/D-09) — after all
+    // fileSearch seams so the settingsSource lambda sees a built store ──
+    scanService.setListFn(&WinDirectoryWalk::winListDirectory);   // src/win firewall seam
+    scanService.setIndex(&index);
+    scanService.setPool(&scanPool);
+    scanService.setSettingsSource([&settingsStore] {              // UI-thread snapshot (Pitfall 4)
+        return ScanService::ScanSettings{ settingsStore.scanRoots(),
+                                          settingsStore.scanIntervalMinutes() };
+    });
+    scanService.start();                                          // arms interval timer if roots exist (D-09)
 
     // ── Phase-05.1 (05.1-04): curation seams — store reads at build time,
     // hide/show persistence from the model. Hide must NEVER trigger

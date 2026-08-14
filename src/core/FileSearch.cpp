@@ -6,27 +6,27 @@
 
 // FileSearch coordinator (D-12..D-18): the typing-feel heart of the phase.
 // Threading (see the header contract): the debounce timer, m_generation and
-// m_state are UI-thread-only; the QtConcurrent worker owns the COM apartment
-// and runs the status probe + query + tracked-source match (AppCatalog
-// discipline, PATTERNS §2). The seams are set before any dispatch and never
-// mutated — the worker captures copies, never touches UI-thread state.
+// m_state are UI-thread-only; the QtConcurrent worker runs the status probe +
+// query + tracked-source match (AppCatalog discipline, PATTERNS §2). The
+// seams are set before any dispatch and never mutated — the worker captures
+// copies, never touches UI-thread state.
 
 namespace {
 // Map the worker's FileSearchState ordinal to the enum (StatusFn contract:
-// returns the ordinal — main.cpp wires checkIndexStatus's IndexerState whose
-// ordinal order mirrors FileSearchState; tests pass ordinals directly).
+// returns the ordinal — main.cpp maps ScanService::stateOrdinal explicitly
+// (07-04); tests pass ordinals directly).
 FileSearch::FileSearchState stateFromOrdinal(int ordinal)
 {
     switch (ordinal) {
-    case FileSearch::FileSearchState::Disabled:
-        return FileSearch::FileSearchState::Disabled;
-    case FileSearch::FileSearchState::Building:
-        return FileSearch::FileSearchState::Building;
-    case FileSearch::FileSearchState::Unavailable:
-        return FileSearch::FileSearchState::Unavailable;
-    case FileSearch::FileSearchState::Ok:
+    case FileSearch::FileSearchState::NoRoots:
+        return FileSearch::FileSearchState::NoRoots;
+    case FileSearch::FileSearchState::Scanning:
+        return FileSearch::FileSearchState::Scanning;
+    case FileSearch::FileSearchState::Error:
+        return FileSearch::FileSearchState::Error;
+    case FileSearch::FileSearchState::Idle:
     default:
-        return FileSearch::FileSearchState::Ok;
+        return FileSearch::FileSearchState::Idle;
     }
 }
 } // namespace
@@ -126,13 +126,13 @@ void FileSearch::dispatch()
     const auto worker = [gen, q, statusFn, queryFn, tracked, added]() -> WorkerResult {
         try {
             const FileSearchState st =
-                statusFn ? stateFromOrdinal(statusFn()) : FileSearchState::Ok;
+                statusFn ? stateFromOrdinal(statusFn()) : FileSearchState::Idle;
 
             if (q.isEmpty()) {
                 // D-14 (default list): added-only snapshot. The curated
                 // catalog renders via the app pipeline; manual picks (CUR-04
                 // escape hatch) flow here. No index query, no fuzzy pass
-                // (every added entry shows), and no Disabled/Unavailable
+                // (every added entry shows), and no NoRoots/Error
                 // short-circuit — the default list must survive an index
                 // outage. Status still rides along (st) so the UI's
                 // stateChanged stays truthful when the query clears.
@@ -142,18 +142,19 @@ void FileSearch::dispatch()
                 return WorkerResult{ gen, q, out, st };
             }
 
-            // D-16/D-17: Disabled/Unavailable skip the query — status only.
-            if (st == FileSearchState::Disabled || st == FileSearchState::Unavailable)
+            // D-16/D-17: NoRoots/Error skip the query — status only.
+            if (st == FileSearchState::NoRoots || st == FileSearchState::Error)
                 return WorkerResult{ gen, q, {}, st };
 
             QueryResult r;
             if (queryFn)
                 r = queryFn(q);
-            // RESEARCH §2: query failed with Ok status → Unavailable.
+            // RESEARCH §2: query failed with Idle status → Error.
             if (r.failed)
-                return WorkerResult{ gen, q, {}, FileSearchState::Unavailable };
+                return WorkerResult{ gen, q, {}, FileSearchState::Error };
 
-            // Building stays Building — the query still runs (D-17).
+            // Scanning stays Scanning — the query still runs (D-17 spirit:
+            // the loaded index serves partial results while the walk fills).
             // D-06/D-07 second source: tracked/added .exe matched on name AND path.
             QVector<AppEntry> out = r.entries;
             if (tracked) {
@@ -168,8 +169,8 @@ void FileSearch::dispatch()
         } catch (...) {
             // AppCatalog discipline: nothing may escape the worker — QtConcurrent
             // would rethrow at result() on the UI thread → crash. A throwing seam
-            // degrades to Unavailable (RESEARCH §2 query-failure semantics).
-            return WorkerResult{ gen, q, {}, FileSearchState::Unavailable };
+            // degrades to Error (RESEARCH §2 query-failure semantics).
+            return WorkerResult{ gen, q, {}, FileSearchState::Error };
         }
     };
 
@@ -202,13 +203,13 @@ QString FileSearch::statusText() const
     // D-17: the SINGLE home of the three locked trouble-state copies (RESEARCH
     // §9). QML renders this string verbatim (04-05) — it never invents its own.
     switch (m_state) {
-    case FileSearchState::Disabled:
-        return QStringLiteral("Indexing is turned off — enable Windows Search to find files");
-    case FileSearchState::Building:
-        return QStringLiteral("Windows is still building its search index — files will appear soon");
-    case FileSearchState::Unavailable:
-        return QStringLiteral("File search is unavailable right now");
-    case FileSearchState::Ok:
+    case FileSearchState::NoRoots:
+        return QStringLiteral("No scan locations yet — add folders in Settings to search files");
+    case FileSearchState::Scanning:
+        return QStringLiteral("Scanning — files appear as they're found");
+    case FileSearchState::Error:
+        return QStringLiteral("Scan unavailable — check your scan locations in Settings");
+    case FileSearchState::Idle:
         break;
     }
     return QString();
@@ -216,5 +217,5 @@ QString FileSearch::statusText() const
 
 bool FileSearch::indexerOk() const
 {
-    return m_state == FileSearchState::Ok;
+    return m_state == FileSearchState::Idle;
 }

@@ -52,3 +52,16 @@ QColor SettingsStore::readAccent() const
     QColor c = QColor::fromString(raw);
     return c.isValid() ? c : QColor(QStringLiteral("#0078D4"));
 }
+
+QStringList SettingsStore::scanRoots() const
+{
+    // 07-04 D-01: live read — an external edit / 07-05 Settings write is
+    // picked up on the next ScanService snapshot (Pitfall 4 discipline).
+    return m_settings.value(QStringLiteral("scan/roots"), QStringList()).toStringList();
+}
+
+int SettingsStore::scanIntervalMinutes() const
+{
+    // Silent fallback to the D-09 default (10 min) on missing/garbage values.
+    return m_settings.value(QStringLiteral("scan/intervalMinutes"), 10).toInt();
+}

@@ -2,6 +2,7 @@
 #include <QColor>
 #include <QObject>
 #include <QSettings>
+#include <QStringList>
 
 // Single source of truth for the accent value (D-13/D-14). Persists to the
 // existing wisp INI (%APPDATA%\TID\wisp\wisp.ini) under the non-colliding
@@ -36,6 +37,14 @@ public:
     // Phase-6 picker entry point: persist + sync + notify. Invalid colors
     // are silently ignored (D-16).
     Q_INVOKABLE void setAccent(const QColor &c);
+
+    // ── Phase-7 scan settings (07-04 reads, 07-05 writes) ──
+    // Live reads from the same INI keys the 07-05 Settings UI writes
+    // ("scan/roots" list, "scan/intervalMinutes"); defaults = no roots /
+    // 10 minutes (D-09 roadmap range). Consumed by main.cpp's ScanService
+    // settingsSource on the UI thread (Pitfall 4 snapshot).
+    QStringList scanRoots() const;
+    int scanIntervalMinutes() const;
 
 signals:
     void accentChanged(const QColor &accent);
