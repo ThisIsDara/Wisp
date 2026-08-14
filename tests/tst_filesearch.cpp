@@ -14,11 +14,11 @@ Q_DECLARE_METATYPE(AppEntry)
 
 // FileSearch coordinator contract (D-12..D-18): 150ms debounce where the LAST
 // text wins (D-12), generation-countered stale-drop (D-15), empty-query bypass
-// (D-14), Disabled/Unavailable skip + Building query-and-status (D-16/D-17),
-// query-failure → Unavailable (RESEARCH §2), tracked-source merge (D-06/D-07),
-// addExecutable immediate re-dispatch (D-11), quiet fill-in (D-13). All
-// behaviors proven with injected fakes — zero COM, zero real index
-// (RESEARCH Validation Architecture: tst_filesearch).
+// (D-14), NoRoots/Error skip + Scanning query-and-status (D-16/D-17 spirit,
+// 07-04 remap), query-failure → Error (RESEARCH §2), tracked-source merge
+// (D-06/D-07), addExecutable immediate re-dispatch (D-11), quiet fill-in
+// (D-13). All behaviors proven with injected fakes — zero COM, zero real
+// index (RESEARCH Validation Architecture: tst_filesearch).
 //
 // WR-05: every FileSearch here runs on a DEDICATED QThreadPool (setPool) —
 // never the shared global QtConcurrent pool — and delivery-dependent
@@ -40,10 +40,10 @@ AppEntry fileEntry(const QString &name, const QString &path)
 }
 
 // Hoisted named consts — no braced-init-lists inside QCOMPARE (MSVC rule).
-const auto kDisabled = FileSearch::FileSearchState::Disabled;
-const auto kBuilding = FileSearch::FileSearchState::Building;
-const auto kUnavailable = FileSearch::FileSearchState::Unavailable;
-const auto kOk = FileSearch::FileSearchState::Ok;
+const auto kNoRoots = FileSearch::FileSearchState::NoRoots;
+const auto kScanning = FileSearch::FileSearchState::Scanning;
+const auto kError = FileSearch::FileSearchState::Error;
+const auto kIdle = FileSearch::FileSearchState::Idle;
 
 } // namespace
 
@@ -58,11 +58,11 @@ private slots:
     void staleGenerationDropped_D15();
     void staleTextDroppedInDebounceWindow_WR03();
     void emptyQueryAddedOnly_D14();
-    void disabledSkipsQuery_D16();
-    void unavailableSkipsQuery();
-    void buildingQueriesAndReports_D17();
+    void noRootsSkipsQuery_D16();
+    void errorSkipsQuery();
+    void scanningQueriesAndReports_D17();
     void okClearsStateAndText();
-    void queryFailureMapsUnavailable();
+    void queryFailureMapsError();
     void trackedSourceMerged_D06();
     void addExecutableRedispatches_D11();
     void quietFillIn_D13();
@@ -202,7 +202,7 @@ void TstFileSearch::emptyQueryAddedOnly_D14()
     QCOMPARE(files.at(0).displayName, QStringLiteral("A.exe"));
 }
 
-void TstFileSearch::disabledSkipsQuery_D16()
+void TstFileSearch::noRootsSkipsQuery_D16()
 {
     FileSearch fs;
     fs.setPool(&m_pool);
@@ -211,22 +211,22 @@ void TstFileSearch::disabledSkipsQuery_D16()
         ++calls;
         return FileSearch::QueryResult{};
     });
-    fs.setStatusFn([]() { return static_cast<int>(kDisabled); });
+    fs.setStatusFn([]() { return static_cast<int>(kNoRoots); });
     QSignalSpy results(&fs, &FileSearch::resultsReady);
     QSignalSpy changed(&fs, &FileSearch::stateChanged);
 
     fs.setQuery(QStringLiteral("x"));
     QVERIFY(results.wait(kWaitGenerous));
 
-    QCOMPARE(calls.load(), 0); // D-16: Disabled skips the query entirely
+    QCOMPARE(calls.load(), 0); // D-16: NoRoots skips the query entirely
     QCOMPARE(results.count(), 1); // status-only delivery (empty files)
-    QCOMPARE(changed.count(), 1); // Ok → Disabled transition surfaced once
+    QCOMPARE(changed.count(), 1); // Idle → NoRoots transition surfaced once
     QCOMPARE(fs.statusText(),
-             QStringLiteral("Indexing is turned off — enable Windows Search to find files"));
+             QStringLiteral("No scan locations yet — add folders in Settings to search files"));
     QCOMPARE(fs.indexerOk(), false);
 }
 
-void TstFileSearch::unavailableSkipsQuery()
+void TstFileSearch::errorSkipsQuery()
 {
     FileSearch fs;
     fs.setPool(&m_pool);
@@ -235,19 +235,19 @@ void TstFileSearch::unavailableSkipsQuery()
         ++calls;
         return FileSearch::QueryResult{};
     });
-    fs.setStatusFn([]() { return static_cast<int>(kUnavailable); });
+    fs.setStatusFn([]() { return static_cast<int>(kError); });
     QSignalSpy results(&fs, &FileSearch::resultsReady);
 
     fs.setQuery(QStringLiteral("x"));
     QVERIFY(results.wait(kWaitGenerous));
 
-    QCOMPARE(calls.load(), 0); // Unavailable skips the query (status only)
+    QCOMPARE(calls.load(), 0); // Error skips the query (status only)
     QCOMPARE(results.count(), 1);
-    QCOMPARE(fs.statusText(), QStringLiteral("File search is unavailable right now"));
+    QCOMPARE(fs.statusText(), QStringLiteral("Scan unavailable — check your scan locations in Settings"));
     QCOMPARE(fs.indexerOk(), false);
 }
 
-void TstFileSearch::buildingQueriesAndReports_D17()
+void TstFileSearch::scanningQueriesAndReports_D17()
 {
     FileSearch fs;
     fs.setPool(&m_pool);
@@ -259,18 +259,17 @@ void TstFileSearch::buildingQueriesAndReports_D17()
             false
         };
     });
-    fs.setStatusFn([]() { return static_cast<int>(kBuilding); });
+    fs.setStatusFn([]() { return static_cast<int>(kScanning); });
     QSignalSpy results(&fs, &FileSearch::resultsReady);
 
     fs.setQuery(QStringLiteral("note"));
     QVERIFY(results.wait(kWaitGenerous));
 
-    QCOMPARE(calls.load(), 1); // D-17: Building still queries (partial results fine)
+    QCOMPARE(calls.load(), 1); // Scanning still queries (partial results fine — D-17 spirit)
     QCOMPARE(results.count(), 1);
     const QVector<AppEntry> files = results.first().at(2).value<QVector<AppEntry>>();
     QCOMPARE(files.size(), 1); // resultsReady carries the entries
-    QCOMPARE(fs.statusText(),
-             QStringLiteral("Windows is still building its search index — files will appear soon"));
+    QCOMPARE(fs.statusText(), QStringLiteral("Scanning — files appear as they're found"));
     QCOMPARE(fs.indexerOk(), false);
 }
 
@@ -285,15 +284,15 @@ void TstFileSearch::okClearsStateAndText()
     });
     QSignalSpy results(&fs, &FileSearch::resultsReady);
 
-    // Disabled cycle first — the status row must be showing.
-    fs.setStatusFn([]() { return static_cast<int>(kDisabled); });
+    // NoRoots cycle first — the status row must be showing.
+    fs.setStatusFn([]() { return static_cast<int>(kNoRoots); });
     fs.setQuery(QStringLiteral("calc"));
     QVERIFY(results.wait(kWaitGenerous));
     QCOMPARE(fs.statusText().isEmpty(), false);
     QCOMPARE(fs.indexerOk(), false);
 
-    // Indexer recovers → Ok clears the text and re-opens the file pipeline.
-    fs.setStatusFn([]() { return static_cast<int>(kOk); });
+    // Roots configured → Idle clears the text and re-opens the file pipeline.
+    fs.setStatusFn([]() { return static_cast<int>(kIdle); });
     fs.setQuery(QStringLiteral("calc"));
     QVERIFY(results.wait(kWaitGenerous));
     QCOMPARE(fs.statusText(), QString());
@@ -301,11 +300,11 @@ void TstFileSearch::okClearsStateAndText()
     QCOMPARE(results.count(), 2);
 }
 
-void TstFileSearch::queryFailureMapsUnavailable()
+void TstFileSearch::queryFailureMapsError()
 {
     FileSearch fs;
     fs.setPool(&m_pool);
-    fs.setStatusFn([]() { return static_cast<int>(kOk); });
+    fs.setStatusFn([]() { return static_cast<int>(kIdle); });
     fs.setQueryFn([](const QString &) {
         return FileSearch::QueryResult{ QVector<AppEntry>{}, true }; // RESEARCH §2 failed
     });
@@ -314,7 +313,7 @@ void TstFileSearch::queryFailureMapsUnavailable()
     fs.setQuery(QStringLiteral("x"));
     QVERIFY(results.wait(kWaitGenerous));
 
-    QCOMPARE(fs.statusText(), QStringLiteral("File search is unavailable right now"));
+    QCOMPARE(fs.statusText(), QStringLiteral("Scan unavailable — check your scan locations in Settings"));
     QCOMPARE(fs.indexerOk(), false);
     QCOMPARE(results.count(), 1); // status-only delivery
 }
