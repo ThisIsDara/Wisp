@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Window
 import wisp
 
@@ -108,8 +109,11 @@ Window {
         border.width: 1
         clip: true
 
-        // Content column — vertical budget 318 <= 328 (UI-SPEC declared):
-        // 24 pad + 18 header + 12 + 64 + 12 + 88 + 12 + 64 + 24 pad.
+        // Content column — vertical budget 488 <= 528 (UI-SPEC declared;
+        // 07-05: +158 scan section, was 318 <= 328):
+        // 24 pad + 18 header + 12 + 64 + 12 + 88 + 12 + 64 + 12 + 158 + 24 pad
+        // = 488; column content 440 <= 480 column height — 40px slack, no
+        // clipping (research OQ1: growth via tokens, not a ScrollView).
         Column {
             anchors.fill: parent
             anchors.margins: Theme.settingsPad
@@ -357,6 +361,211 @@ Window {
                         // 2px inset — knobSize is track − 2x2 (UI-SPEC).
                         x: root.autostartEnabled ? parent.width - width - 2 : 2
                         Behavior on x { NumberAnimation { duration: Theme.animFade; easing: Easing.Linear } }
+                    }
+                }
+            }
+
+            // ── Scan locations row (158px, 07-05 D-10) — roots list with
+            // add/remove (native picker), ± interval selector, Scan now, and
+            // the last-scan summary. All values flow through the injected
+            // settingsController; the surface never parses the INI.
+            Rectangle {
+                id: scanRow
+                width: parent.width
+                height: Theme.settingsRowScan
+                color: "transparent"
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: Theme.border
+                }
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.spaceXs
+                    Text {
+                        text: "Scan locations"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeTitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textPrimary
+                    }
+                    Text {
+                        text: "Folders wisp scans for files and folders"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textSecondary
+                    }
+                }
+
+                // Right-side controls: roots list (or empty placeholder),
+                // interval row, action row — stacked, 56+8+28+8+28 = 128 <= 158.
+                Column {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.spaceSm
+                    width: 260
+
+                    // Root list — height-capped (research Pitfall 3: no
+                    // full-height ListView), token-driven height.
+                    ScrollView {
+                        width: parent.width
+                        height: Theme.settingsRowScanRoots
+                        clip: true
+                        contentWidth: width
+                        visible: settingsController && settingsController.scanRoots.length > 0
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        Column {
+                            width: parent.width
+                            Repeater {
+                                model: settingsController ? settingsController.scanRoots : []
+                                Rectangle {
+                                    width: parent.width
+                                    height: Theme.settingsRowScanItem
+                                    color: "transparent"
+                                    Text {
+                                        anchors.left: parent.left
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: parent.width - 60
+                                        elide: Text.ElideMiddle
+                                        text: modelData
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.fontSizeSubtitle
+                                        font.weight: Theme.fontWeightRegular
+                                        color: Theme.textSecondary
+                                    }
+                                    Text {
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "Remove"
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.fontSizeSubtitle
+                                        font.weight: Theme.fontWeightRegular
+                                        color: removeHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                                        MouseArea {
+                                            id: removeHover
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            onClicked: {
+                                                if (settingsController)
+                                                    settingsController.removeScanRoot(index)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        width: parent.width
+                        text: "No folders yet — add one below"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textSecondary
+                        visible: !(settingsController && settingsController.scanRoots.length > 0)
+                    }
+
+                    // Interval row — ± buttons; the clamp (1..1440) lives in
+                    // SettingsStore (OQ4), never in the UI.
+                    Row {
+                        width: parent.width
+                        height: Theme.settingsRowScanItem
+                        spacing: Theme.spaceSm
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Scan every"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightRegular
+                            color: Theme.textSecondary
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: settingsController ? settingsController.scanIntervalMinutes + " min" : "10 min"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightSemibold
+                            color: Theme.textPrimary
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "−"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightRegular
+                            color: minusHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            MouseArea {
+                                id: minusHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    if (settingsController)
+                                        settingsController.setScanInterval(settingsController.scanIntervalMinutes - 1)
+                                }
+                            }
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "+"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightRegular
+                            color: plusHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            MouseArea {
+                                id: plusHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    if (settingsController)
+                                        settingsController.setScanInterval(settingsController.scanIntervalMinutes + 1)
+                                }
+                            }
+                        }
+                    }
+
+                    // Action row — "Scan now" accent button + last-scan summary.
+                    Row {
+                        width: parent.width
+                        height: Theme.settingsRowScanItem
+                        spacing: Theme.spaceSm
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 84
+                            height: Theme.settingsRowScanItem
+                            radius: Theme.fieldRadius
+                            color: Theme.accent
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Scan now"
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightSemibold
+                                color: Theme.onAccentText
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (settingsController)
+                                        settingsController.scanNow()
+                                }
+                            }
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 84 - Theme.spaceSm
+                            elide: Text.ElideMiddle
+                            text: settingsController && settingsController.lastScanSummary !== ""
+                                  ? settingsController.lastScanSummary : "Not scanned yet"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightRegular
+                            color: Theme.textSecondary
+                        }
                     }
                 }
             }
