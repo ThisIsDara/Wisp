@@ -7,6 +7,7 @@
 #include "core/AppEntry.h"
 #include "core/AutostartManager.h"
 #include "core/CurationStore.h"
+#include "core/FavoritesStore.h"
 #include "core/FileIndex.h"
 #include "core/FileSearch.h"
 #include "core/HotkeyManager.h"
@@ -83,6 +84,7 @@ int main(int argc, char *argv[])
     FileSearch fileSearch;          // context property "fileSearch" — debounced worker (04-02)
     SettingsStore settingsStore;    // context property "settingsStore" — accent store (05-03, D-14)
     CurationStore curationStore;    // 05.1: UI-thread-only hide/show store (CUR-02)
+    FavoritesStore favoritesStore;  // 2026-08-15: UI-thread-only favorites store (Favorites tab)
     AutostartManager autostart;     // 06-01: HKCU Run-key store (SYS-02, D-10/D-12)
 
     // ── Phase-7 (07-04): local index + scan service — the D-01 backend swap ──
@@ -161,6 +163,14 @@ int main(int argc, char *argv[])
     resultsModel.setHideStore([&curationStore](const QString &id, bool hidden) {
         if (hidden) curationStore.hide(id); else curationStore.show(id);
     });
+    // 2026-08-15: favorites seam — bind the store and seed the persisted set
+    // at startup so the Favorites tab reflects prior sessions. Favorites are
+    // id-based (targetPath/aumid), so file rows and manual picks favorite
+    // like apps (no source exclusion — it's a positive marker, unlike curation).
+    resultsModel.setFavoriteStore([&favoritesStore](const QString &id, bool favorite) {
+        favoritesStore.setFavorite(id, favorite);
+    });
+    resultsModel.setFavoriteIds(favoritesStore.favoriteIds());
     // D-14: the default-list escape hatch — addedExecutables ONLY (never
     // launch history): manual picks join the empty-query list, launched
     // executables don't (CUR-04 intent). Stamped with the curation store so

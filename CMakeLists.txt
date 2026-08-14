@@ -36,6 +36,7 @@ qt_add_library(wisp_core STATIC
     src/core/AutostartManager.cpp
     src/core/CurationRules.cpp
     src/core/CurationStore.cpp
+    src/core/FavoritesStore.cpp
     src/ui/HotkeyCaptureDialog.cpp
     src/ui/SettingsWindow.cpp
 )
@@ -174,6 +175,10 @@ if(BUILD_TESTING)
     target_link_libraries(tst_curation PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
     add_test(NAME tst_curation COMMAND tst_curation)
 
+    qt_add_executable(tst_favorites tests/tst_favorites.cpp)
+    target_link_libraries(tst_favorites PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
+    add_test(NAME tst_favorites COMMAND tst_favorites)
+
     # Qt test binaries need the Qt DLLs (Qt6Testd.dll etc.) at run time; ctest
     # does not inherit build.ps1's PATH. Prepend Qt's bin dir (derived from
     # Qt6::Core's location — no hardcoded path) for every test so plain
@@ -184,7 +189,7 @@ if(BUILD_TESTING)
         tst_enum tst_catalog tst_launch tst_tray tst_filesearch
         tst_scan tst_index
         tst_history tst_icons tst_iconcache tst_settings tst_autostart
-        tst_curation
+        tst_curation tst_favorites
         PROPERTIES ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )

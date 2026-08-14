@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QSet>
 #include <QVector>
 
 #include <functional>
@@ -26,6 +27,7 @@ class ResultsModel : public QAbstractListModel
     Q_PROPERTY(int selectedIndex READ selectedIndex NOTIFY selectionChanged) // LAUN-05 nav binding
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged) // 05.1: show-hidden mode toggle
     Q_PROPERTY(int hiddenCount READ hiddenCount NOTIFY hiddenCountChanged) // 05.1: footer visibility (rule- AND user-hidden)
+    Q_PROPERTY(bool favoritesOnly READ favoritesOnly WRITE setFavoritesOnly NOTIFY favoritesOnlyChanged) // 2026-08-15: "Favorites" tab mode
 
 public:
     enum Roles {
@@ -37,6 +39,7 @@ public:
         IconKeyRole,  // 05-04: image://wispicons/{id} — Lnk 'path;index', File 'path:path', Uwp 'uwp:PFN|appId'
         IsHiddenRole, // 05.1: QML dims hidden rows via model.isHidden
         IsHideableRole, // 2026-08-15: remove-button visibility (CUR-04 guard parity)
+        IsFavoriteRole, // 2026-08-15: QML star — true if the row's id (targetPath/aumid) is favorited
     };
 
     explicit ResultsModel(QObject *parent = nullptr);
@@ -83,6 +86,26 @@ public:
     using HideStore = std::function<void(const QString &id, bool hidden)>;
     void setHideStore(HideStore fn);
 
+    // ── 2026-08-15 favorites surface ("Favorites" tab) ──
+    // Favorites are tracked as a SET of ids (targetPath/aumid — same identity
+    // contract as curation) held in m_favoriteIds, NOT an AppEntry flag: in
+    // the 07-06-pivoted product rows are File/added entries rebuilt per query,
+    // so membership-by-id survives rebuilds for ANY row type (file rows too —
+    // favorites are a positive marker, unlike curation's escape-hatch guard,
+    // so nothing is excluded). The star renders via IsFavoriteRole; the
+    // favorites-only mode filters m_order to favorite rows. favoriteSelected/
+    // unfavoriteSelected toggle the SELECTED row and persist via the seam,
+    // preserving the active query (never a setEntries reset).
+    Q_INVOKABLE void favoriteSelected();   // mark the selected row favorite (persist true)
+    Q_INVOKABLE void unfavoriteSelected(); // unmark the selected row (persist false)
+    bool favoritesOnly() const;
+    Q_INVOKABLE void setFavoritesOnly(bool on); // "All | Favorites" tab toggle
+    // Persistence seam — production binds FavoritesStore (main.cpp);
+    // tests inject spies. UI thread only (FavoritesStore precedent).
+    using FavoriteStore = std::function<void(const QString &id, bool favorite)>;
+    void setFavoriteStore(FavoriteStore fn);
+    void setFavoriteIds(const QSet<QString> &ids); // seed persisted favorites at startup
+
     // ── Phase-4 file results (04-04): D-01..D-07, D-14, D-15 ──
     // setFileResults(generation, query, files): UI-thread delivery from the
     // file-search coordinator (04-05 wiring). Stores the latest generation,
@@ -106,6 +129,7 @@ signals:
     void selectionChanged();
     void showHiddenChanged();
     void hiddenCountChanged();  // 05.1: QML footer "Show hidden (N)" visibility
+    void favoritesOnlyChanged(); // 2026-08-15: "Favorites" tab toggle
 
 private:
     // Display row: resolved by data()/snapshotSelected() against m_entries
@@ -121,6 +145,12 @@ private:
     // asc (D-01/D-05), caps file rows at kMaxFileRows (D-03), and applies the
     // kPathMatchScore base tier for path-only matches (D-07).
     void mergeFiles();
+    // 2026-08-15: favorites mode — true if the row's id is in m_favoriteIds.
+    bool isFavoriteRow(const Row &row) const;
+    // 2026-08-15: when m_favoritesOnly, prunes m_order/m_ranges to favorite
+    // rows (no-op otherwise). Called at the end of every order-building site
+    // (setEntries, buildAppOrder, mergeFiles).
+    void filterFavorites();
 
     QVector<AppEntry> m_entries;       // always sorted alphabetically (case-insensitive)
     QVector<AppEntry> m_fileEntries;   // latest accepted file set (D-15 generation-guarded)
@@ -138,6 +168,9 @@ private:
     int m_selected = 0;
     bool m_showHidden = false;   // 05.1: show-hidden mode — reveals dimmed rows for Unhide
     HideStore m_hideStore;       // 05.1: persistence seam (CurationStore in production, spies in tests)
+    bool m_favoritesOnly = false;  // 2026-08-15: "Favorites" tab mode
+    QSet<QString> m_favoriteIds;   // 2026-08-15: favorite ids (targetPath/aumid) — survives rebuilds
+    FavoriteStore m_favoriteStore; // 2026-08-15: persistence seam (FavoritesStore in production, spies in tests)
     static constexpr int kVisibleRows = 7;   // 640×400 shell ≈ 7 rows of 44px (UI-SPEC geometry)
     static constexpr int kMaxFileRows = 1000; // 07-06: file rows ARE the list; the index
                                              // pipeline caps candidates at 1000 upstream,

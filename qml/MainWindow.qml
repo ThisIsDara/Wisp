@@ -391,7 +391,8 @@ Window {
                 id: searchField
                 anchors.top: parent.top
                 anchors.left: parent.left
-                anchors.right: parent.right
+                anchors.right: viewSeg.left       // 2026-08-15: leave the top-right for the All|Favorites tab
+                anchors.rightMargin: Theme.spaceMd
                 height: Theme.rowHeight
                 placeholderText: "Type to search apps and files…"  // RESEARCH §7 verbatim
                 font.pixelSize: Theme.fontSizeQuery
@@ -426,11 +427,81 @@ Window {
             Rectangle {
                 anchors.top: searchField.bottom
                 anchors.left: parent.left
-                anchors.right: parent.right
+                anchors.right: viewSeg.left       // track the field's right edge (2026-08-15)
+                anchors.rightMargin: Theme.spaceMd
                 height: Theme.searchUnderlineHeight
                 color: Theme.appOutline
                 opacity: searchField.activeFocus ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
+            }
+
+            // ── All | Favorites tab (2026-08-15) ──
+            // A compact segmented control beside the search field: All = the
+            // normal merged list; Favorites = favoritesOnly mode (the model
+            // filters m_order to favorited rows). Active segment = neon-orange
+            // fill with black text (the app's identity color); inactive =
+            // transparent with dim text, brightening on hover. Drives
+            // resultsModel.setFavoritesOnly. Vertical identity: fills the
+            // 44px field row so it reads as one control.
+            Item {
+                id: viewSeg
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.rightMargin: Theme.spaceMd
+                width: allSeg.width + Theme.spaceXs + favSeg.width
+                height: Theme.rowHeight
+
+                Rectangle {
+                    id: allSeg
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: allSegText.implicitWidth + Theme.spaceMd * 2
+                    height: Theme.rowHeight - Theme.spaceSm * 2
+                    radius: Theme.chipRadius
+                    color: resultsModel.favoritesOnly ? "transparent" : Theme.appOutline
+                    Text {
+                        id: allSegText
+                        anchors.centerIn: parent
+                        text: "All"
+                        color: resultsModel.favoritesOnly
+                             ? (allHover.containsMouse ? Theme.textPrimary : Theme.textSecondary)
+                             : Theme.surface
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        font.weight: Theme.fontWeightSemibold
+                    }
+                    MouseArea {
+                        id: allHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: resultsModel.setFavoritesOnly(false)
+                    }
+                }
+
+                Rectangle {
+                    id: favSeg
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: allSeg.right
+                    anchors.leftMargin: Theme.spaceXs
+                    width: favSegText.implicitWidth + Theme.spaceMd * 2
+                    height: Theme.rowHeight - Theme.spaceSm * 2
+                    radius: Theme.chipRadius
+                    color: resultsModel.favoritesOnly ? Theme.appOutline : "transparent"
+                    Text {
+                        id: favSegText
+                        anchors.centerIn: parent
+                        text: "\u2605 Favorites"
+                        color: resultsModel.favoritesOnly
+                             ? Theme.surface
+                             : (favHover.containsMouse ? Theme.textPrimary : Theme.textSecondary)
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        font.weight: Theme.fontWeightSemibold
+                    }
+                    MouseArea {
+                        id: favHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: resultsModel.setFavoritesOnly(true)
+                    }
+                }
             }
 
             // ── Results list panel (LAUN-05) — darker inset region ──

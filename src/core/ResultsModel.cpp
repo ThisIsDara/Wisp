@@ -4,6 +4,17 @@
 #include <QHash>
 #include <QSet>
 
+namespace {
+
+// 2026-08-15: favorites identity — the same contract as curation (targetPath
+// wins; UWP falls back to aumid). Empty when neither is present.
+QString idOf(const AppEntry &e)
+{
+    return e.targetPath.isEmpty() ? e.aumid : e.targetPath;
+}
+
+} // namespace
+
 ResultsModel::ResultsModel(QObject *parent)
     : QAbstractListModel(parent)
 {
@@ -29,6 +40,9 @@ QHash<int, QByteArray> ResultsModel::roleNames() const
         // 2026-08-15: isHideable — ResultsRow's remove button renders only on
         // rows hideSelected() will actually hide (CUR-04 parity).
         { IsHideableRole, "isHideable" },
+        // 2026-08-15: isFavorite — the star button's filled/orange state,
+        // driven by m_favoriteIds membership (id = targetPath/aumid).
+        { IsFavoriteRole, "isFavorite" },
     };
 }
 
@@ -54,6 +68,7 @@ void ResultsModel::setEntries(QVector<AppEntry> entries)
         m_order.append(Row{ i, false });
     }
     m_ranges = QVector<FuzzyMatcher::Result>(m_order.size()); // no-match results (aligned with m_order)
+    filterFavorites(); // 2026-08-15: favorites tab — prune to favorite rows when active
 
     // Fresh catalog slate — a rebuilt catalog never resurrects stale file
     // rows (D-08 coherence). WR-03: only the ENTRIES are cleared — the
@@ -139,6 +154,7 @@ void ResultsModel::buildAppOrder()
         // empty-query order that skips hidden rows must not carry ranges
         // sized to m_entries.size() (only coincidentally equal today).
         m_ranges = QVector<FuzzyMatcher::Result>(m_order.size());
+        filterFavorites(); // 2026-08-15: favorites tab — prune to favorite rows when active
         return;
     }
 
@@ -164,6 +180,7 @@ void ResultsModel::buildAppOrder()
         m_order.append(s.first);
         m_ranges.append(s.second);
     }
+    filterFavorites(); // 2026-08-15: favorites tab — prune to favorite rows when active
 }
 
 void ResultsModel::mergeFiles()
@@ -227,6 +244,7 @@ void ResultsModel::mergeFiles()
         m_order.append(c.row);
         m_ranges.append(c.result);
     }
+    filterFavorites(); // 2026-08-15: favorites tab — prune to favorite rows when active
 }
 
 void ResultsModel::setFileResults(quint64 generation, const QString &query,
@@ -360,6 +378,10 @@ QVariant ResultsModel::data(const QModelIndex &idx, int role) const
         // never hideable (the search escape hatch stays open); app rows,
         // UWP rows, and manual picks (fromAdded) all are.
         return !(entry.source == AppEntry::Source::File && !row.fromAdded);
+    case IsFavoriteRole:
+        // 2026-08-15: favorites are per-ID (targetPath/aumid), so membership
+        // survives rebuilds for ANY row type (file rows too).
+        return m_favoriteIds.contains(idOf(entry));
     default:
         return {};
     }
@@ -540,4 +562,119 @@ void ResultsModel::unhideSelected()
         mergeFiles();
     endResetModel();
     emit hiddenCountChanged(); // 05.1: -1 hidden → footer count re-renders
+}
+
+// ── 2026-08-15 favorites surface ──
+
+bool ResultsModel::isFavoriteRow(const Row &row) const
+{
+    return m_favoriteIds.contains(idOf(entryAt(row)));
+}
+
+void ResultsModel::filterFavorites()
+{
+    if (!m_favoritesOnly)
+        return;
+    QVector<Row> keep;
+    QVector<FuzzyMatcher::Result> keepRanges;
+    keep.reserve(m_order.size());
+    keepRanges.reserve(m_order.size());
+    for (int i = 0; i < m_order.size(); ++i) {
+        if (isFavoriteRow(m_order.at(i))) {
+            keep.append(m_order.at(i));
+            keepRanges.append(m_ranges.at(i));
+        }
+    }
+    m_order = std::move(keep);
+    m_ranges = std::move(keepRanges);
+}
+
+bool ResultsModel::favoritesOnly() const
+{
+    return m_favoritesOnly;
+}
+
+void ResultsModel::setFavoritesOnly(bool on)
+{
+    if (m_favoritesOnly == on)
+        return;
+    const int oldSelected = m_selected;
+    m_favoritesOnly = on;
+    beginResetModel();
+    buildAppOrder();
+    if (!m_query.isEmpty())
+        mergeFiles();
+    const int last = m_order.size() - 1;
+    if (m_selected > last) {
+        m_selected = last < 0 ? 0 : last;
+        if (oldSelected != m_selected)
+            emit selectionChanged(); // P7: emit only when the clamp moved it
+    }
+    endResetModel();
+    emit favoritesOnlyChanged();
+}
+
+void ResultsModel::setFavoriteStore(FavoriteStore fn)
+{
+    m_favoriteStore = std::move(fn);
+}
+
+void ResultsModel::setFavoriteIds(const QSet<QString> &ids)
+{
+    m_favoriteIds = ids;
+}
+
+void ResultsModel::favoriteSelected()
+{
+    if (m_order.isEmpty())
+        return;
+    const Row &row = m_order.at(m_selected);
+    const AppEntry e = entryAt(row);
+    const QString id = idOf(e);
+    if (id.isEmpty())
+        return; // no identity — nothing to persist
+    if (m_favoriteStore)
+        m_favoriteStore(id, true);
+    m_favoriteIds.insert(id);
+    const int oldSelected = m_selected;
+    beginResetModel();
+    buildAppOrder();
+    if (!m_query.isEmpty())
+        mergeFiles();
+    const int last = m_order.size() - 1;
+    if (m_selected > last) {
+        m_selected = last < 0 ? 0 : last;
+        if (oldSelected != m_selected)
+            emit selectionChanged(); // P7: emit only when the clamp moved it
+    }
+    endResetModel();
+}
+
+void ResultsModel::unfavoriteSelected()
+{
+    if (m_order.isEmpty())
+        return;
+    const Row &row = m_order.at(m_selected);
+    const AppEntry e = entryAt(row);
+    const QString id = idOf(e);
+    if (id.isEmpty())
+        return;
+    // L-01-style guard: not a favorite → no spurious store write.
+    if (!m_favoriteIds.contains(id))
+        return;
+    if (m_favoriteStore)
+        m_favoriteStore(id, false);
+    m_favoriteIds.remove(id);
+    const int oldSelected = m_selected;
+    beginResetModel();
+    buildAppOrder();
+    if (!m_query.isEmpty())
+        mergeFiles();
+    const int last = m_order.size() - 1;
+    if (m_selected > last) {
+        m_selected = last < 0 ? 0 : last;
+        if (oldSelected != m_selected)
+            emit selectionChanged(); // P7: emit only when the clamp moved it
+    }
+    endResetModel();
 }

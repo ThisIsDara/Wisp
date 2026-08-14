@@ -14,12 +14,12 @@ Item {
     id: row
     width: ListView.view.width
     implicitHeight: Theme.rowHeight
-    // 2026-08-15: row hover INCLUDING the remove button — the button sits on
-    // top of hoverArea (it consumes its own presses), so without this a
-    // cursor on the X would blank the row's hover bg (Qt Quick delivers hover
-    // to the topmost MouseArea only). Drives the hover bg, the button's
-    // visibility, and the text column's rightMargin.
-    property bool hovered: hoverArea.containsMouse || removeHover.containsMouse
+    // 2026-08-15: row hover INCLUDING the remove button AND the favorite star
+    // — both sit on top of hoverArea (they consume their own presses), so
+    // without this a cursor on either would blank the row's hover bg (Qt Quick
+    // delivers hover to the topmost MouseArea only). Drives the hover bg, the
+    // buttons' visibility, and the text column's rightMargin.
+    property bool hovered: hoverArea.containsMouse || removeHover.containsMouse || favHover.containsMouse
 
     // Selected-row emphasis (2026-08-11 user redesign): the current row grows
     // slightly. GROW FROM THE LEFT EDGE (origin Left) — a center origin shifts
@@ -104,12 +104,15 @@ Item {
         anchors.left: monogram.right
         anchors.leftMargin: Theme.spaceMd
         anchors.right: parent.right
-        // 2026-08-15: while the row is hovered the remove button occupies the
-        // right 40px — the title shortens so it never runs under the X (the
-        // elide/chip geometry recompute happens once per hover, no animation).
+        // 2026-08-15: while hovered the remove button AND the favorite star occupy
+        // the right ~64px — the title shortens so it never runs under them.
+        // A favorited-but-not-hovered row still reserves the star's slot.
         anchors.rightMargin: row.hovered
-                             ? Theme.spaceSm + Theme.removeButtonSize + Theme.spaceSm
-                             : Theme.spaceMd
+                             ? Theme.spaceSm + Theme.removeButtonSize + Theme.spaceXs
+                               + Theme.removeButtonSize + Theme.spaceSm
+                             : (model.isFavorite
+                                ? Theme.spaceSm + Theme.removeButtonSize + Theme.spaceXs
+                                : Theme.spaceMd)
         anchors.verticalCenter: parent.verticalCenter
 
         // Title line box (LAUN-06, D-05..D-08): the ONLY line that carries
@@ -260,6 +263,45 @@ Item {
             }
             resultsModel.selectIndex(model.index) // visual sync — tick slides to the click
             launchController.launchIndex(model.index, false) // LAUN-05: click launches (D-12 freeze in C++)
+        }
+    }
+
+    // ── Hover-revealed favorite star (2026-08-15) ──
+    // Toggles the row's favorite flag via the model (favoriteSelected/
+    // unfavoriteSelected — id-based, so file rows favorite too). Always visible
+    // on a favorited row (orange filled star); hover-revealed otherwise (the
+    // outline star). Mirrors the remove button's counter-scale x pin: sits
+    // just LEFT of the remove button, visually right-pinned across the scaled
+    // selected row. Consumes its own presses (never launches); right-clicks
+    // fall through (LeftButton only) so the context menu still works.
+    Item {
+        id: favBtn
+        visible: true
+        width: Theme.removeButtonSize
+        height: Theme.removeButtonSize
+        x: (parent.width - Theme.spaceSm) / row.scale - Theme.removeButtonSize
+           - Theme.spaceXs - width
+        anchors.verticalCenter: parent.verticalCenter
+        opacity: model.isFavorite ? Theme.fullOpacity : (row.hovered ? Theme.fullOpacity : 0)
+        Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
+        Text {
+            anchors.centerIn: parent
+            text: model.isFavorite ? "\uE735" : "\uE734" // MDL2 FavoriteStarFill / FavoriteStar — the one declared literal
+            font.family: "Segoe MDL2 Assets"
+            font.pixelSize: Theme.fontSizeSubtitle
+            color: model.isFavorite ? Theme.appOutline : Theme.textSecondary
+        }
+        MouseArea {
+            id: favHover
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: {
+                resultsModel.selectIndex(model.index)
+                if (model.isFavorite)
+                    resultsModel.unfavoriteSelected()
+                else
+                    resultsModel.favoriteSelected()
+            }
         }
     }
 
