@@ -211,7 +211,7 @@ Window {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 1
-                    color: Theme.border
+                    color: Theme.separator
                 }
 
                 Column {
@@ -315,7 +315,7 @@ Window {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 1
-                    color: Theme.border
+                    color: Theme.separator
                 }
 
                 Column {
@@ -383,7 +383,7 @@ Window {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 1
-                    color: Theme.border
+                    color: Theme.separator
                 }
 
                 Column {

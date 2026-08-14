@@ -592,7 +592,7 @@ Window {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 1
-                    color: Theme.border
+                    color: Theme.separator
                 }
                 MouseArea {
                     id: showHiddenArea
@@ -630,7 +630,7 @@ Window {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 1
-                    color: Theme.border
+                    color: Theme.separator
                 }
                 MouseArea {
                     id: addFolderArea
@@ -683,7 +683,7 @@ Window {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 1
-                    color: Theme.border
+                    color: Theme.separator
                 }
                 MouseArea {
                     id: addExeArea

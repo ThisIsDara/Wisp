@@ -13,6 +13,11 @@ QtObject {
     readonly property color appOutline: "#FF7A00"         // neon-orange outline around the whole app
     readonly property color appOutlineDim: "#9C5400"      // dim halo ring outside the bright ring
     readonly property int appOutlineWidth: 2              // neon outline border width
+    // Element separators (2026-08-15): hairline dividers between rows/sections
+    // are the SAME color as the neon outline — the user's "make all the
+    // separating lines match the outline" ask. Kept as a named token so the
+    // dividers stay in lockstep with the identity color.
+    readonly property color separator: appOutline
     readonly property color border: "#3F3F46"           // 1px surface hairline
     // D-13/D-15/D-16: the SINGLE mutable color source. The initializer IS the
     // silent fallback — missing/corrupt wisp.ini accent resolves to this
