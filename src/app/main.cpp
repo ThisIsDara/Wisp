@@ -4,7 +4,7 @@
 #include <QQuickWindow>
 #include <QSystemTrayIcon>
 
-#include "core/AppCatalog.h"
+#include "core/AppEntry.h"
 #include "core/AutostartManager.h"
 #include "core/CurationStore.h"
 #include "core/FileIndex.h"
@@ -25,8 +25,6 @@
 #include "win/WinFullscreenGuard.h"
 #include "win/WinIconExtractor.h"
 #include "win/WinSingleInstance.h"
-#include "win/WinStartMenuEnumerator.h"
-#include "win/WinUwpEnumerator.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -80,7 +78,6 @@ int main(int argc, char *argv[])
     // below — state-updating wiring stays after load).
     ResultsModel resultsModel;      // context property "resultsModel"
     LaunchController launch;        // context property "launchController"
-    AppCatalog catalog;             // worker-built app inventory (D-08)
     LauncherController controller;  // hoisted here so the D-13 lambda can capture it
     LaunchHistory history;          // D-10/D-11 launch-tracking + added-exe store (04-03)
     FileSearch fileSearch;          // context property "fileSearch" — debounced worker (04-02)
@@ -103,8 +100,12 @@ int main(int argc, char *argv[])
     const bool indexLoaded = index.load();      // corrupt → false → empty index (Pitfall 8)
     qInfo("index load: %lldms (ok=%d)", indexLoadTimer.elapsed(), int(indexLoaded));
 
-    catalog.setScanners({ &WinStartMenuEnumerator::scanStartMenu,
-                          &WinUwpEnumerator::scanUwpApps }); // 03-02 real scanners
+    // Phase-7 pivot (07-06): the user redirected the product: the launcher list is NEVER pre-populated — no Start
+    // Menu / UWP enumeration feeds the model. The list stays empty until the
+    // user picks folders to scan (07-06 launcher picker or Settings) and the
+    // ScanService fills the index; query results are scan files only (plus
+    // user-added executables). AppCatalog stays in the codebase for tests,
+    // but main.cpp no longer constructs or starts it.
     launch.setModel(&resultsModel);                          // D-12 snapshot source
     // D-13: launch success dismisses INSTANTLY (hideNow — no animation wait).
     // The dismissal is controller-owned policy; QML never calls hideNow.
@@ -148,12 +149,11 @@ int main(int argc, char *argv[])
     });
     scanService.start();                                          // arms interval timer if roots exist (D-09)
 
-    // ── Phase-05.1 (05.1-04): curation seams — store reads at build time,
-    // hide/show persistence from the model. Hide must NEVER trigger
-    // ensureFresh/setEntries (research Pitfall 3 — the model removes live).
-    catalog.setCurationSource([&curationStore] {
-        return AppCatalog::CurationData{ curationStore.hiddenIds(), curationStore.shownIds() };
-    });
+    // ── Phase-05.1 (05.1-04): curation seams — hide/show persistence from
+    // the model. Hide must NEVER trigger ensureFresh/setEntries (research
+    // Pitfall 3 — the model removes live). AppCatalog's curation source is
+    // gone with the catalog (Phase-7 pivot (07-06)) — curation now applies to manual
+    // picks only (fileSearch.setAddedSource below re-reads the store).
     resultsModel.setHideStore([&curationStore](const QString &id, bool hidden) {
         if (hidden) curationStore.hide(id); else curationStore.show(id);
     });
@@ -201,23 +201,8 @@ int main(int argc, char *argv[])
 
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
 
-    // D-08 silent swap: whenever the worker finishes a build, the model
-    // receives the new snapshot (setEntries resets query → results clear
-    // only when the catalog actually rebuilt; coherent, not broken).
-    QObject::connect(&catalog, &AppCatalog::refreshed, &resultsModel,
-                     [&resultsModel, &catalog] {
-                         resultsModel.setEntries(catalog.entries());
-                     });
-    // D-08 age check on every show — the ONLY ensureFresh in this file
-    // (wiring-check gate: never inside a HotkeyManager handler). The scan
-    // itself runs on the catalog worker; this call is just the cheap check.
-    if (window) {
-        QObject::connect(window, &QQuickWindow::visibleChanged, &catalog,
-                         [window, &catalog] {
-                             if (window->isVisible())
-                                 catalog.ensureFresh();
-                         });
-    }
+    // Phase-7 pivot (07-06): no catalog → no setEntries wiring. The model starts and
+    // stays empty; file results arrive via the FileSearch connect below.
 
     // D-15: generation-stamped file results → model merge (04-04). UI-thread
     // delivery guaranteed by FileSearch's watcher completion. WR-03: the query
@@ -346,10 +331,9 @@ int main(int argc, char *argv[])
         hotkeys.start();
     }
 
-    // D-08: kick the catalog worker build exactly ONCE — after all connects,
-    // before the event loop. NEVER inside a hotkey handler (scanning on the
-    // worker keeps the WM_HOTKEY path to a cheap age check, T-03-05-01).
-    catalog.start();
+    // Phase-7 pivot (07-06): no catalog worker — nothing builds a default list at
+    // boot. The ScanService interval timer (armed in scanService.start(),
+    // line ~150) is the only background work: it rescans the user's roots.
 
     return app.exec();
 }

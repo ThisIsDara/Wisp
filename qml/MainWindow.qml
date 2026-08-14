@@ -722,7 +722,7 @@ Item {
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: resultsModel.query === ""
-                                  ? "Recent apps will appear here"
+                                  ? "No files here yet — select a folder to scan"
                                   : "No results for \"" + resultsModel.query + "\""
                             font.pixelSize: Theme.fontSizeTitle
                             font.weight: Theme.fontWeightRegular

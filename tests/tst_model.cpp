@@ -362,8 +362,11 @@ void TstModel::fileResultsMerge_D01()
 
 void TstModel::fileCap5_D03()
 {
-    // D-03: at most kMaxFileRows (5) file rows survive a merge; apps are never
-    // dropped, regardless of where the file rows would rank.
+    // D-03 (Phase-7 pivot 07-06): the per-query file cap no longer bites —
+    // with the catalog unwired, file rows ARE the list. kMaxFileRows = 100
+    // (the index pipeline caps candidates at 100 upstream), so all seven
+    // file rows survive the merge; apps (here: two lnk rows) still rank by
+    // score like any other row.
     ResultsModel m;
     m.setEntries({ lnkEntry(QStringLiteral("FileExplorer"), {}),
                    lnkEntry(QStringLiteral("FileZilla"), {}) });
@@ -377,16 +380,18 @@ void TstModel::fileCap5_D03()
                        fileEntry(QStringLiteral("File6.exe"), QStringLiteral("C:\\x\\File6.exe")),
                        fileEntry(QStringLiteral("File7.exe"), QStringLiteral("C:\\x\\File7.exe")) });
 
-    // All entries tie on score (same "file" prefix tier) → the 5 highest file
-    // rows survive in alpha order, then the apps — nothing dropped from the app side.
-    QCOMPARE(m.rowCount({}), 7);
+    // All entries tie on score (same "file" prefix tier) → all file rows
+    // survive in alpha order; apps rank by score like any other row.
+    QCOMPARE(m.rowCount({}), 9);
     QCOMPARE(displayNameAt(m, 0), QStringLiteral("File1.exe"));
     QCOMPARE(displayNameAt(m, 1), QStringLiteral("File2.exe"));
     QCOMPARE(displayNameAt(m, 2), QStringLiteral("File3.exe"));
     QCOMPARE(displayNameAt(m, 3), QStringLiteral("File4.exe"));
     QCOMPARE(displayNameAt(m, 4), QStringLiteral("File5.exe"));
-    QCOMPARE(displayNameAt(m, 5), QStringLiteral("FileExplorer"));
-    QCOMPARE(displayNameAt(m, 6), QStringLiteral("FileZilla"));
+    QCOMPARE(displayNameAt(m, 5), QStringLiteral("File6.exe"));
+    QCOMPARE(displayNameAt(m, 6), QStringLiteral("File7.exe"));
+    QCOMPARE(displayNameAt(m, 7), QStringLiteral("FileExplorer"));
+    QCOMPARE(displayNameAt(m, 8), QStringLiteral("FileZilla"));
 }
 
 void TstModel::pathOnlyBaseScore_D07()
