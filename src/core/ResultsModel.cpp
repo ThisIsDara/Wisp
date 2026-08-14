@@ -2,6 +2,7 @@
 
 #include <QFileInfo>
 #include <QHash>
+#include <QSet>
 
 ResultsModel::ResultsModel(QObject *parent)
     : QAbstractListModel(parent)
@@ -171,6 +172,20 @@ void ResultsModel::mergeFiles()
     struct Candidate { Row row; FuzzyMatcher::Result result; };
     QVector<Candidate> merged;
     merged.reserve(m_order.size() + m_fileEntries.size());
+    // D-03: path-set dedupe — scanned rows duplicating an app-catalog row
+    // (Lnk/tracked/added) are suppressed; the catalog row (icon, display
+    // name) wins. Built from path-bearing rows ONLY — UWP rows have an
+    // empty targetPath and can never collide (Pitfall 10). Keys are
+    // case-folded native paths (T-07-03: one consistent fold, no raw vs
+    // normalized mixing — paths arrive normalized from every source).
+    QSet<QString> appPaths;
+    for (int i = 0; i < m_order.size(); ++i) {
+        if (m_order.at(i).fromFiles)
+            continue;
+        const QString p = entryAt(m_order.at(i)).targetPath;
+        if (!p.isEmpty())
+            appPaths.insert(p.toCaseFolded());
+    }
     for (int i = 0; i < m_order.size(); ++i) {
         if (m_order.at(i).fromFiles)
             continue; // file rows from an earlier merge — the loop below rebuilds them fresh
@@ -201,6 +216,9 @@ void ResultsModel::mergeFiles()
     for (const Candidate &c : merged) {
         if (c.row.fromFiles && fileRows >= kMaxFileRows)
             continue;
+        if (c.row.fromFiles
+            && appPaths.contains(entryAt(c.row).targetPath.toCaseFolded()))
+            continue; // D-03: catalog row already renders this path — scan row suppressed
         if (c.row.fromFiles)
             ++fileRows;
         m_order.append(c.row);
