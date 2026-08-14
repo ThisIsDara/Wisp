@@ -356,6 +356,20 @@ Window {
             opacity: Theme.shadowOpacity
         }
 
+        // Neon halo (2026-08-15): a dim-orange ring just OUTSIDE the bright
+        // app ring — reads as a neon tube around the whole app with zero blur
+        // cost (D-06: never blur the hot path). It sits behind the opaque
+        // surface, so only the outer line shows.
+        Rectangle {
+            id: appHalo
+            anchors.fill: surface
+            anchors.margins: -3
+            color: "transparent"
+            border.color: Theme.appOutlineDim
+            border.width: 1
+            z: 0
+        }
+
         // The surface
         Rectangle {
             id: surface
@@ -364,8 +378,7 @@ Window {
             height: Theme.surfaceHeight   // 440
             radius: Theme.radiusSurface
             color: Theme.surface
-            border.color: Theme.border
-            border.width: 1
+            border.width: 0   // neon outline drawn by the ring overlay (last child, z 1)
             clip: true
 
             // ── Search field region (Phase-3 vertical slice) ──
@@ -419,20 +432,11 @@ Window {
                 Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
             }
 
-            // ── Results list frame (LAUN-05) — neon/cyberpunk panel ──
-            // A thin dim-orange halo OUTSIDE the bright orange frame reads as
-            // a neon tube with zero blur cost (D-06: never blur the hot path).
-            // The dark panel (listBg — darker than the surface) sits inset
-            // from the shell by spaceSm — the "small layout around the list".
-            Rectangle {
-                id: listHalo
-                anchors.fill: listFrame
-                anchors.margins: -3
-                color: "transparent"
-                border.color: Theme.listOutlineDim
-                border.width: 1
-                z: 0
-            }
+            // ── Results list panel (LAUN-05) — darker inset region ──
+            // The neon outline now frames the WHOLE app surface (2026-08-15);
+            // this list keeps only the darker panel (listBg — a bit darker
+            // than the surface) inset by spaceSm — the "small layout around
+            // the list".
             Rectangle {
                 id: listFrame
                 anchors.top: searchField.bottom
@@ -444,8 +448,6 @@ Window {
                 anchors.bottom: resultsModel.hiddenCount > 0 ? showHiddenRow.top : addFolderRow.top
                 anchors.bottomMargin: Theme.spaceSm
                 color: Theme.listBg
-                border.color: Theme.listOutline
-                border.width: Theme.listOutlineWidth
                 radius: 0
                 z: 0
             }
@@ -1012,6 +1014,21 @@ Item {
                 function onAccentChanged(c) {
                     Theme.accent = c
                 }
+            }
+
+            // Neon app outline (2026-08-15): the LAST child draws the bright
+            // orange ring ON TOP of the surface's content, so the frame is
+            // never broken by opaque rows reaching an edge (footer hover
+            // fills, etc.). Transparent fill — it only contributes the 2px
+            // ring. z 1 keeps it below the dismissal catcher (15) and the
+            // context menu (20).
+            Rectangle {
+                id: appRing
+                anchors.fill: parent
+                color: "transparent"
+                border.color: Theme.appOutline
+                border.width: Theme.appOutlineWidth
+                z: 1
             }
         }
     }

@@ -5,14 +5,14 @@ QtObject {
     // --- Color (UI-SPEC Color section) ---
     readonly property color surface: "#1E1E1E"          // dominant 60% — window surface
     readonly property color surfaceSecondary: "#2D2D30" // secondary 30% — inset wells (Phase 3)
-    // Neon/cyberpunk results-list panel (2026-08-15): listBg is DARKER than
-    // surface (the "darker list" ask); listOutline is the bright neon-orange
-    // frame border; listOutlineDim is the halo ring just outside it (reads as
-    // a neon tube with zero blur cost — D-06 never blurs the hot path).
-    readonly property color listBg: "#141414"             // results panel — darker than surface
-    readonly property color listOutline: "#FF7A00"        // neon-orange frame border
-    readonly property color listOutlineDim: "#9C5400"     // dim halo ring outside the frame
-    readonly property int listOutlineWidth: 2             // neon frame border width
+    // Neon/cyberpunk identity (2026-08-15): appOutline is the bright neon-orange
+    // ring around the WHOLE app; appOutlineDim is the dim halo ring just
+    // outside it (reads as a neon tube with zero blur cost — D-06 never
+    // blurs the hot path); listBg is the results panel, DARKER than surface.
+    readonly property color listBg: "#101010"             // results panel — darker than surface
+    readonly property color appOutline: "#FF7A00"         // neon-orange outline around the whole app
+    readonly property color appOutlineDim: "#9C5400"      // dim halo ring outside the bright ring
+    readonly property int appOutlineWidth: 2              // neon outline border width
     readonly property color border: "#3F3F46"           // 1px surface hairline
     // D-13/D-15/D-16: the SINGLE mutable color source. The initializer IS the
     // silent fallback — missing/corrupt wisp.ini accent resolves to this
