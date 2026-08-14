@@ -587,6 +587,7 @@ Window {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: Theme.rowHeight
+                color: "transparent"   // show the black surface — Rectangle defaults to white
                 // 1px top hairline — same structural constant as the field
                 // separator (declared exception: UI-SPEC hairline rule).
                 Rectangle {
