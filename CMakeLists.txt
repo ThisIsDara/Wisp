@@ -27,6 +27,7 @@ qt_add_library(wisp_core STATIC
     src/core/ResultsModel.cpp
     src/core/AppCatalog.cpp
     src/core/FileSearch.cpp
+    src/core/FileIndex.cpp
     src/core/LaunchController.cpp
     src/core/LaunchHistory.cpp
     src/core/IconCache.cpp
@@ -145,6 +146,14 @@ if(BUILD_TESTING)
     target_link_libraries(tst_filesearch PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
     add_test(NAME tst_filesearch COMMAND tst_filesearch)
 
+    qt_add_executable(tst_scan tests/tst_scan.cpp)
+    target_link_libraries(tst_scan PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
+    add_test(NAME tst_scan COMMAND tst_scan)
+
+    qt_add_executable(tst_index tests/tst_index.cpp)
+    target_link_libraries(tst_index PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
+    add_test(NAME tst_index COMMAND tst_index)
+
     qt_add_executable(tst_history tests/tst_history.cpp)
     target_link_libraries(tst_history PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
     add_test(NAME tst_history COMMAND tst_history)
@@ -177,6 +186,7 @@ if(BUILD_TESTING)
         tst_shell tst_hotkey tst_launcher tst_capture tst_singleinstance
         tst_matcher tst_model
         tst_enum tst_catalog tst_launch tst_tray tst_search tst_filesearch
+        tst_scan tst_index
         tst_history tst_icons tst_iconcache tst_settings tst_autostart
         tst_curation
         PROPERTIES ENVIRONMENT_MODIFICATION
