@@ -36,6 +36,7 @@ public:
         IsFolderRole, // D-04: QML folder glyph — true for folder file rows only
         IconKeyRole,  // 05-04: image://wispicons/{id} — Lnk 'path;index', File 'path:path', Uwp 'uwp:PFN|appId'
         IsHiddenRole, // 05.1: QML dims hidden rows via model.isHidden
+        IsHideableRole, // 2026-08-15: remove-button visibility (CUR-04 guard parity)
     };
 
     explicit ResultsModel(QObject *parent = nullptr);

@@ -68,6 +68,8 @@ QtObject {
     readonly property int chipRadius: 4           // rounded highlight chip corner (D-07)
     readonly property int chipPadX: 4             // chip horizontal padding (spaceXs)
     readonly property int chipHeight: 20          // chip height, centered on the title line box
+    readonly property int removeButtonSize: 24   // hover-revealed row remove button (declared 4-grid)
+    readonly property int removeButtonRadius: 12 // fully rounded circle (declared sub-grid garnish)
     readonly property int scrollbarWidth: 6       // overlay thumb width (declared 6px exception)
     readonly property int scrollbarInset: 2       // thumb inset from the list's right edge (overlay)
     readonly property int scrollbarRadius: 3      // thumb corner radius

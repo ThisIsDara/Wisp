@@ -14,6 +14,12 @@ Item {
     id: row
     width: ListView.view.width
     implicitHeight: Theme.rowHeight
+    // 2026-08-15: row hover INCLUDING the remove button — the button sits on
+    // top of hoverArea (it consumes its own presses), so without this a
+    // cursor on the X would blank the row's hover bg (Qt Quick delivers hover
+    // to the topmost MouseArea only). Drives the hover bg, the button's
+    // visibility, and the text column's rightMargin.
+    property bool hovered: hoverArea.containsMouse || removeHover.containsMouse
 
     // Selected-row emphasis (2026-08-11 user redesign): the current row grows
     // slightly. GROW FROM THE LEFT EDGE (origin Left) — a center origin shifts
@@ -36,7 +42,7 @@ Item {
         anchors.fill: parent
         color: ListView.isCurrentItem ? Theme.accent
              : hoverArea.pressed ? Theme.pressedBg
-             : hoverArea.containsMouse ? Theme.hoverBg
+             : row.hovered ? Theme.hoverBg
              : "transparent"
         Behavior on color { ColorAnimation { duration: Theme.animNav; easing.type: Theme.easingOpen } }
     }
@@ -98,7 +104,12 @@ Item {
         anchors.left: monogram.right
         anchors.leftMargin: Theme.spaceMd
         anchors.right: parent.right
-        anchors.rightMargin: Theme.spaceMd
+        // 2026-08-15: while the row is hovered the remove button occupies the
+        // right 40px — the title shortens so it never runs under the X (the
+        // elide/chip geometry recompute happens once per hover, no animation).
+        anchors.rightMargin: row.hovered
+                             ? Theme.spaceSm + Theme.removeButtonSize + Theme.spaceSm
+                             : Theme.spaceMd
         anchors.verticalCenter: parent.verticalCenter
 
         // Title line box (LAUN-06, D-05..D-08): the ONLY line that carries
@@ -249,6 +260,58 @@ Item {
             }
             resultsModel.selectIndex(model.index) // visual sync — tick slides to the click
             launchController.launchIndex(model.index, false) // LAUN-05: click launches (D-12 freeze in C++)
+        }
+    }
+
+    // ── Hover-revealed remove button (2026-08-15) ──
+    // Removes the row via the SAME CUR-02 machinery as right-click → Hide and
+    // Ctrl+H: select the row, then toggle hidden/unhidden (show-hidden mode →
+    // restore). Renders only on hideable rows (model.isHideable — CUR-04
+    // parity, so a transient index file row never gets a dead button). Fades
+    // in/out with the shared 120ms opacity-only micro-animation contract; sits
+    // ON TOP of hoverArea and consumes its own presses — clicking it can never
+    // launch. Right-clicks fall through to hoverArea (only LeftButton
+    // accepted), so the context menu still works over the button.
+    Item {
+        id: removeBtn
+        visible: model.isHideable
+        width: Theme.removeButtonSize
+        height: Theme.removeButtonSize
+        anchors.right: parent.right
+        anchors.rightMargin: Theme.spaceSm
+        anchors.verticalCenter: parent.verticalCenter
+        opacity: row.hovered ? Theme.fullOpacity : 0
+        Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.removeButtonRadius
+            // Current-row (accent bg) → accentDark fill, accentLight ring
+            // (focus family); otherwise a surfaceSecondary well with border,
+            // pressedBg on hover — the same well vocabulary as the steppers.
+            color: ListView.isCurrentItem
+                 ? Theme.accentDark
+                 : removeHover.containsMouse ? Theme.pressedBg : Theme.surfaceSecondary
+            border.width: 1
+            border.color: ListView.isCurrentItem ? Theme.accentLight : Theme.border
+        }
+        Text {
+            anchors.centerIn: parent
+            text: "\uE711" // MDL2 "Cancel" (X) — the one declared literal
+            font.family: "Segoe MDL2 Assets"
+            font.pixelSize: Theme.fontSizeSubtitle
+            color: ListView.isCurrentItem || removeHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+        }
+        MouseArea {
+            id: removeHover
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: {
+                resultsModel.selectIndex(model.index)
+                if (model.isHidden)
+                    resultsModel.unhideSelected()
+                else
+                    resultsModel.hideSelected()
+            }
         }
     }
 }

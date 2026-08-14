@@ -110,6 +110,7 @@ private slots:
     void hiddenCountCountsAllHidden_CUR02();
     void hideMarksAllSameIdRows_M01();   // 05.1 review: mark ALL same-id rows
     void unhideNoOpOnVisibleRow_L01();   // 05.1 review: no spurious shown override
+    void isHideableRole_CUR04();         // 2026-08-15: remove-button visibility parity
 };
 
 void TstModel::emptyQueryFullList_D01_D02()
@@ -299,6 +300,9 @@ void TstModel::qmlContracts_LAUN05()
     QCOMPARE(names.value(ResultsModel::AumidRole), QByteArray("aumid"));
     // 05.1: isHidden role — QML dims hidden rows via model.isHidden (CUR-03).
     QCOMPARE(names.value(ResultsModel::IsHiddenRole), QByteArray("isHidden"));
+    // 2026-08-15: isHideable role — the remove button renders only on
+    // hideable rows (CUR-04 parity).
+    QCOMPARE(names.value(ResultsModel::IsHideableRole), QByteArray("isHideable"));
 
     QSignalSpy spy(&m, &ResultsModel::selectionChanged);
     m.moveSelection(+1);          // 0 → 1: notified
@@ -916,6 +920,33 @@ void TstModel::unhideNoOpOnVisibleRow_L01()
     QCOMPARE(spy.calls.size(), 2);
     QCOMPARE(spy.calls.at(1).second, false); // shown override written
     QCOMPARE(m.hiddenCount(), 0);
+}
+
+void TstModel::isHideableRole_CUR04()
+{
+    // 2026-08-15: the remove button renders only on rows hideSelected() will
+    // actually hide — CUR-04 parity exposed as a role. App rows and manual
+    // picks (fromAdded) are hideable; a TRANSIENT index file row (fromFiles,
+    // live query) is not — the search escape hatch stays open.
+    ResultsModel m;
+    m.setEntries({ lnkEntry(QStringLiteral("Alpha"), QStringLiteral("C:\\apps\\a.exe")) });
+    m.setQuery(QString());
+    // D-14: manual pick on the added channel — a File-source row that IS
+    // hideable (curated like an app, 2026-08-12).
+    m.setFileResults(0, QString(), { fileEntry(QStringLiteral("Noise.exe"),
+                                               QStringLiteral("C:\\x\\Noise.exe")) });
+    QCOMPARE(m.rowCount({}), 2);
+    QCOMPARE(m.data(m.index(0), ResultsModel::IsHideableRole).toBool(), true); // added pick
+    QCOMPARE(m.data(m.index(1), ResultsModel::IsHideableRole).toBool(), true); // app row
+
+    // Live query → the SAME file row arrives on the transient index channel:
+    // never hideable.
+    m.setQuery(QStringLiteral("noise"));
+    m.setFileResults(1, QStringLiteral("noise"),
+                     { fileEntry(QStringLiteral("Noise.exe"),
+                                 QStringLiteral("C:\\x\\Noise.exe")) });
+    QCOMPARE(m.rowCount({}), 1);
+    QCOMPARE(m.data(m.index(0), ResultsModel::IsHideableRole).toBool(), false);
 }
 
 void TstModel::hiddenCountCountsAllHidden_CUR02()

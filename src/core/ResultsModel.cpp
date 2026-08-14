@@ -26,6 +26,9 @@ QHash<int, QByteArray> ResultsModel::roleNames() const
         { IconKeyRole, "iconKey" },
         // 05.1: isHidden — QML dims hidden rows in show-hidden mode (CUR-03).
         { IsHiddenRole, "isHidden" },
+        // 2026-08-15: isHideable — ResultsRow's remove button renders only on
+        // rows hideSelected() will actually hide (CUR-04 parity).
+        { IsHideableRole, "isHideable" },
     };
 }
 
@@ -352,6 +355,11 @@ QVariant ResultsModel::data(const QModelIndex &idx, int role) const
         return entry.aumid;
     case IsHiddenRole:
         return entry.hidden;
+    case IsHideableRole:
+        // CUR-04 parity with hideSelected(): TRANSIENT index file rows are
+        // never hideable (the search escape hatch stays open); app rows,
+        // UWP rows, and manual picks (fromAdded) all are.
+        return !(entry.source == AppEntry::Source::File && !row.fromAdded);
     default:
         return {};
     }
