@@ -1,0 +1,58 @@
+name: installer
+
+# Builds ONLY the NSIS installer (wisp-setup.exe). No standalone wisp.exe
+# artifact. Trigger manually, or on a push to a release tag.
+#
+# Note: the installer embeds wisp.exe as its payload; "installer only" here
+# means the CI produces just the installer artifact and not a separate
+# wisp.exe, matching the repo README's single installable.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Qt 6.11.1 MSVC x64. aqtinstall 3.3.0 (what install-qt-action@v4
+      # ships) cannot parse Qt's new Windows repo layout for 6.11+, fixed
+      # in git master only (miurahr/aqtinstall#959, PR #1000) — install from
+      # git and call aqt directly, on a pinned stable Python.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install Qt 6.11.1
+        shell: pwsh
+        run: |
+          python -m pip install --quiet git+https://github.com/miurahr/aqtinstall.git
+          python -m aqt install-qt windows desktop 6.11.1 win64_msvc2022_64 --outputdir D:\a\Wisp\Qt
+          "Qt6_DIR=D:\a\Wisp\Qt\6.11.1\msvc2022_64" >> $env:GITHUB_ENV
+          "D:\a\Wisp\Qt\6.11.1\msvc2022_64\bin" >> $env:GITHUB_PATH
+
+      # vcvars64 environment for CMake/Ninja
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      # NSIS via choco; build-installer.ps1 locates makensis under Program
+      # Files (x86)\NSIS, chocolatey lib, or a portable copy.
+      - name: install NSIS
+        run: choco install nsis --no-progress -y
+
+      - name: build installer
+        shell: pwsh
+        run: ./packaging/build-installer.ps1 -Config release
+
+      # Upload only the installer. wisp.exe stays embedded inside it.
+      - name: upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: wisp-setup
+          path: build/deploy/wisp-setup.exe
+          if-no-files-found: error
