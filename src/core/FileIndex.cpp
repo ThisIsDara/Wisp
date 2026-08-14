@@ -202,6 +202,15 @@ void FileIndex::apply(const WalkOutcome &outcome)
         existing.insert(e.matchKey);
         m_entries.append(e);
     }
+    // REPLACE, never insert-accumulate: outcome.mtimes is a full snapshot
+    // copy (walkAndDelta line ~64) plus this walk's updates — the ONE
+    // authoritative memo. Insert-accumulate left stale keys behind after an
+    // empty-roots wipe: entries were removed but the memo survived, so a
+    // re-added root's subtrees were memo-skipped as "unchanged" and the
+    // index stayed near-empty forever (07-06 observed: 7 entries, 4414
+    // stale mtimes). The wipe path clears outcome.mtimes (walkAndDelta ~76);
+    // replacing propagates that clear to m_dirMtimes.
+    m_dirMtimes.clear();
     for (auto it = outcome.mtimes.constBegin(); it != outcome.mtimes.constEnd(); ++it)
         m_dirMtimes.insert(it.key(), it.value());
 }

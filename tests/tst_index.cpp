@@ -34,6 +34,7 @@ private slots:
     void persistenceRoundTrip();
     void saveCreatesMissingParentDir();
     void corruptIndexFileLoadsEmpty();
+    void wipeThenRescanRepopulates();
     void concurrentReadsDuringWalk();
 
 private:
@@ -339,6 +340,41 @@ void TstIndex::corruptIndexFileLoadsEmpty()
     FileIndex index(m_indexPath);
     QVERIFY(!index.load()); // corrupt → false, index stays empty, no crash
     QCOMPARE(index.entryCount(), 0);
+}
+
+void TstIndex::wipeThenRescanRepopulates()
+{
+    // 07-06 regression: an empty-roots scan wipes ALL entries AND the memo.
+    // apply() used to insert-accumulate mtimes, so the memo survived the
+    // wipe; a re-added root then saw every subtree memo-matching as
+    // "unchanged" and skipped recursion — the index stayed at the root's
+    // direct children only (observed: 7 entries, 4414 stale mtimes).
+    const QString root = QStringLiteral("C:\\root");
+    auto map = QHash<QString, WinDirectoryWalk::WinDirListing>{
+        {root, listing({entry(QStringLiteral("app.exe"), false, 10), entry(QStringLiteral("sub"), true, 21)},
+                       5)},
+        {root + QStringLiteral("\\sub"),
+         listing({entry(QStringLiteral("tool.exe"), false, 30)}, 21)},
+    };
+    auto listFn = [&map](const QString &p) { return map.value(p); };
+
+    FileIndex index(m_indexPath);
+    index.apply(index.walkAndDelta(QStringList{root}, listFn));
+    QCOMPARE(index.entryCount(), 3);
+
+    // Wipe: no roots → everything removed, memo cleared.
+    index.apply(index.walkAndDelta(QStringList{}, listFn));
+    QCOMPARE(index.entryCount(), 0);
+
+    // Root re-added (user picked the folder again): the walk must descend
+    // INTO sub (memo was cleared) — the deep tool.exe comes back, proving
+    // the wipe actually cleared the memo (stale-memo regression).
+    const auto outcome = index.walkAndDelta(QStringList{root}, listFn);
+    QCOMPARE(outcome.dirsListed, 2); // root + sub — no memo shortcut
+    QCOMPARE(outcome.added.size(), 3);
+    index.apply(outcome);
+    QCOMPARE(index.entryCount(), 3);
+    QCOMPARE(index.queryCandidates(QStringLiteral("tool")).size(), 1);
 }
 
 void TstIndex::concurrentReadsDuringWalk()

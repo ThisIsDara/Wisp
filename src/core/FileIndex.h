@@ -89,7 +89,12 @@ private:
     QHash<QString, qint64> m_dirMtimes; // native-separator path → lastWriteMs
 
     static constexpr quint32 kMagic = 0x57535031; // ASCII "WSP1"
-    static constexpr quint32 kFormatVersion = 1;
+    // Bumped to 2 (07-06): the v1 memo-replace fix (apply() now REPLACES the
+    // memo instead of insert-accumulating) makes any v1 file with a
+    // stale-memo/entries mismatch untrustworthy — load() rejects it and the
+    // first scan re-walks from scratch. Persisted format is otherwise
+    // unchanged.
+    static constexpr quint32 kFormatVersion = 2;
     static constexpr int kCandidateCap = 1000; // research OQ5; raised 07-06 — the default list
                                              // IS the index now (executable launcher)
     static constexpr int kMaxDepth = 64;      // T-07-01 defense-in-depth
