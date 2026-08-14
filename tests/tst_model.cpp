@@ -84,6 +84,15 @@ private slots:
     void selectionPreservedOnMerge();
     void fileRangesShapeForQml();
 
+    // 07-02 D-03 path-set dedupe: scanned rows duplicating a path-bearing
+    // app row are suppressed (catalog wins); UWP rows (empty path) never
+    // suppress; case-folded comparison; path-based, not name-based.
+    void scanRowSuppressedWhenCatalogHasSamePath_D03();
+    void suppressionIsCaseFolded_D03();
+    void uwpRowNeverSuppressesScanRow_D03();
+    void distinctPathsBothRender_D03();
+    void trackedStyleRowSuppressesScanRow_D03();
+
     // WR-03: relevance — results computed for OLD query text are dropped even
     // when their generation is current; the model-side guard stays monotonic
     // across catalog refreshes.
@@ -924,6 +933,96 @@ void TstModel::hiddenCountCountsAllHidden_CUR02()
     QCOMPARE(m.hiddenCount(), 2);
     m.setShowHidden(true); // nor does show-hidden mode
     QCOMPARE(m.hiddenCount(), 2);
+}
+
+void TstModel::scanRowSuppressedWhenCatalogHasSamePath_D03()
+{
+    // D-03: the catalog row (icon, display name) wins over a scanned row
+    // pointing at the same executable. The distinct display names prove
+    // WHICH source rendered.
+    ResultsModel m;
+    m.setEntries({ lnkEntry(QStringLiteral("Calculator"),
+                            QStringLiteral("C:\\Program Files\\Calc\\Calc.exe")) });
+    m.setQuery(QStringLiteral("calc"));
+    m.setFileResults(1, QStringLiteral("calc"),
+                     { fileEntry(QStringLiteral("Calc.exe"),
+                                 QStringLiteral("C:\\Program Files\\Calc\\Calc.exe")) });
+
+    QCOMPARE(m.rowCount({}), 1); // the duplicate scan row is suppressed
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("Calculator")); // catalog row survived
+}
+
+void TstModel::suppressionIsCaseFolded_D03()
+{
+    // T-07-03: dedupe is case-insensitive on the normalized path — the scan
+    // row's lower-case variant must still collide with the catalog key.
+    ResultsModel m;
+    m.setEntries({ lnkEntry(QStringLiteral("Calculator"),
+                            QStringLiteral("C:\\Program Files\\Calc\\Calc.exe")) });
+    m.setQuery(QStringLiteral("calc"));
+    m.setFileResults(1, QStringLiteral("calc"),
+                     { fileEntry(QStringLiteral("Calc.exe"),
+                                 QStringLiteral("c:\\program files\\calc\\calc.exe")) });
+
+    QCOMPARE(m.rowCount({}), 1);
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("Calculator"));
+}
+
+void TstModel::uwpRowNeverSuppressesScanRow_D03()
+{
+    // Pitfall 10: UWP rows carry an EMPTY targetPath — they never enter the
+    // dedupe set, so a same-named scan row still renders.
+    ResultsModel m;
+    m.setEntries({ uwpEntry(QStringLiteral("Store App")) });
+    m.setQuery(QStringLiteral("store"));
+    m.setFileResults(1, QStringLiteral("store"),
+                     { fileEntry(QStringLiteral("Store App.exe"),
+                                 QStringLiteral("D:\\tools\\Store App.exe")) });
+
+    QCOMPARE(m.rowCount({}), 2); // both render — no collision possible
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("Store App"));
+    QCOMPARE(displayNameAt(m, 1), QStringLiteral("Store App.exe"));
+}
+
+void TstModel::distinctPathsBothRender_D03()
+{
+    // Dedupe is path-based, not name-based (D-03: "same resolved path") —
+    // two executables sharing a display name render twice.
+    ResultsModel m;
+    m.setEntries({ lnkEntry(QStringLiteral("X.exe"),
+                            QStringLiteral("C:\\a\\x.exe")) });
+    m.setQuery(QStringLiteral("x.exe"));
+    m.setFileResults(1, QStringLiteral("x.exe"),
+                     { fileEntry(QStringLiteral("X.exe"),
+                                 QStringLiteral("D:\\b\\x.exe")) });
+
+    QCOMPARE(m.rowCount({}), 2);
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("X.exe"));
+    QCOMPARE(displayNameAt(m, 1), QStringLiteral("X.exe"));
+    QCOMPARE(m.data(m.index(0), ResultsModel::SubtitleRole).toString(),
+             QStringLiteral("x.exe")); // the catalog (Lnk) row
+    QCOMPARE(m.data(m.index(1), ResultsModel::SubtitleRole).toString(),
+             QStringLiteral("D:\\b\\x.exe")); // the file row
+}
+
+void TstModel::trackedStyleRowSuppressesScanRow_D03()
+{
+    // D-03 covers tracked/added rows too: they flow through the app channel
+    // (fromFiles=false rows carrying a targetPath) — the same set must
+    // suppress a scan duplicate.
+    AppEntry tracked;
+    tracked.source = AppEntry::Source::File; // tracked-style: File source, app channel
+    tracked.displayName = QStringLiteral("G.exe");
+    tracked.targetPath = QStringLiteral("C:\\tools\\g.exe");
+    ResultsModel m;
+    m.setEntries({ tracked });
+    m.setQuery(QStringLiteral("g.exe"));
+    m.setFileResults(1, QStringLiteral("g.exe"),
+                     { fileEntry(QStringLiteral("G.exe"),
+                                 QStringLiteral("C:\\tools\\g.exe")) });
+
+    QCOMPARE(m.rowCount({}), 1); // the app-channel row wins
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("G.exe"));
 }
 
 QTEST_MAIN(TstModel)
