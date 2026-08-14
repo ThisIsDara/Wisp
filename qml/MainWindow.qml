@@ -446,7 +446,7 @@ Window {
                 anchors.leftMargin: Theme.spaceSm
                 anchors.right: parent.right
                 anchors.rightMargin: Theme.spaceSm
-                anchors.bottom: resultsModel.hiddenCount > 0 ? showHiddenRow.top : addFolderRow.top
+                anchors.bottom: footerRow.top
                 anchors.bottomMargin: Theme.spaceSm
                 color: Theme.listBg
                 radius: 0
@@ -575,107 +575,18 @@ Window {
                 }
             }
 
-            // ── "Show hidden (N)" footer (05.1) — pinned like addExeRow;
-            // visible whenever hidden entries exist (rule- AND user-hidden —
-            // the discoverability surface for the whole feature). Toggling
-            // show-hidden reveals dimmed rows for Unhide (CUR-03).
+            // ── Single-line action footer (2026-08-15) ──
+            // "Add folder to scan…", "Add executable…" and "Show hidden (N)"
+            // all live on ONE 44px row (the user asked to stop stacking them);
+            // that frees vertical space for the results list above. Each
+            // action is its own clickable MouseArea — click-only, no focus,
+            // never part of the model (the keyboard owns the list).
             Rectangle {
-                id: showHiddenRow
-                visible: resultsModel.hiddenCount > 0
-                anchors.bottom: addFolderRow.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: Theme.rowHeight
-                color: showHiddenArea.containsMouse ? Theme.surfaceSecondary : "transparent"
-                // 1px top hairline — same structural constant as addExeRow.
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 1
-                    color: Theme.separator
-                }
-                MouseArea {
-                    id: showHiddenArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: resultsModel.setShowHidden(!resultsModel.showHidden)
-                }
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: Theme.spaceLg
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: resultsModel.showHidden
-                          ? "Hide hidden (" + resultsModel.hiddenCount + ")"
-                          : "Show hidden (" + resultsModel.hiddenCount + ")"
-                    font.pixelSize: Theme.fontSizeTitle
-                    font.weight: Theme.fontWeightRegular
-                    color: Theme.textSecondary
-                }
-            }
-
-            // ── Pinned "Add folder to scan…" row (07-06) — always visible,
-            // same pattern as Add executable… below: click-only, no focus,
-            // never part of the model. Wired in main.cpp (picker → store →
-            // scan). Sits ABOVE "Add executable…" — scanning folders is the
-            // launcher's primary inventory path (07-06 pivot).
-            Rectangle {
-                id: addFolderRow
-                anchors.bottom: addExeRow.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: Theme.rowHeight
-                color: addFolderArea.containsMouse ? Theme.surfaceSecondary : "transparent"
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 1
-                    color: Theme.separator
-                }
-                MouseArea {
-                    id: addFolderArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: launcherController.addScanRoot()
-                }
-                Row {
-                    anchors.left: parent.left
-                    anchors.leftMargin: Theme.spaceLg   // aligns with the list's icon column
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.spaceXs
-                    // 2026-08-15: a "+" (MDL2 Add) in the neon-orange identity
-                    // color — the user dropped the accent-blue folder here.
-                    // Same glyph as "Add executable…" (both are add actions),
-                    // distinguished by color (orange = primary inventory path).
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "\uE710" // MDL2 "Add" (a plus)
-                        font.family: "Segoe MDL2 Assets"
-                        font.pixelSize: Theme.fontSizeSubtitle
-                        color: Theme.appOutline
-                    }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "Add folder to scan…"
-                        font.pixelSize: Theme.fontSizeTitle
-                        font.weight: Theme.fontWeightRegular
-                        color: addFolderArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
-                    }
-                }
-            }
-
-            // ── Pinned "Add executable…" action (D-11) — always visible,
-            // click-only, never part of the model (the keyboard owns the
-            // list; this row takes no focus). Native dialog opens in C++
-            // (fileSearch.addExecutable, 04-02).
-            Rectangle {
-                id: addExeRow
+                id: footerRow
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: Theme.rowHeight
-                color: addExeArea.containsMouse ? Theme.surfaceSecondary : "transparent"
                 // 1px top hairline — same structural constant as the field
                 // separator (declared exception: UI-SPEC hairline rule).
                 Rectangle {
@@ -685,34 +596,94 @@ Window {
                     height: 1
                     color: Theme.separator
                 }
-                MouseArea {
-                    id: addExeArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: fileSearch.addExecutable()
-                }
-                // 2026-08-15 (UI pass): paired with "Add folder to scan…" —
-                // same glyph slot (16px, leftMargin 16, spacing 4) so the two
-                // inventory rows read as one action family. Both show the same
-                // neon-orange + (appOutline) — the user matched them.
+
+                // Left group: the two "add" actions (both neon-orange +).
                 Row {
                     anchors.left: parent.left
-                    anchors.leftMargin: Theme.spaceLg   // aligns with the list's icon column (2026-08-11)
+                    anchors.leftMargin: Theme.spaceLg   // aligns with the list's icon column
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.spaceXs
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "\uE710" // MDL2 "Add" — orange, matches the Add-folder row's + (2026-08-15)
-                        font.family: "Segoe MDL2 Assets"
-                        font.pixelSize: Theme.fontSizeSubtitle
-                        color: Theme.appOutline
+                    spacing: Theme.spaceXl
+                    // "Add folder to scan…" (07-06) — scanning folders is the
+                    // launcher's primary inventory path (07-06 pivot).
+                    MouseArea {
+                        id: addFolderArea
+                        width: addFolderContent.width + Theme.spaceXs
+                        height: Theme.rowHeight
+                        hoverEnabled: true
+                        onClicked: launcherController.addScanRoot()
+                        Row {
+                            id: addFolderContent
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: Theme.spaceXs
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "\uE710" // MDL2 "Add" (a plus) — neon-orange identity
+                                font.family: "Segoe MDL2 Assets"
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                color: Theme.appOutline
+                            }
+                            Text {
+                                id: addFolderLabel
+                                text: "Add folder to scan…"
+                                font.pixelSize: Theme.fontSizeTitle
+                                font.weight: Theme.fontWeightRegular
+                                color: addFolderArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            }
+                        }
                     }
+                    // "Add executable…" (D-11) — native dialog opens in C++
+                    // (fileSearch.addExecutable, 04-02).
+                    MouseArea {
+                        id: addExeArea
+                        width: addExeContent.width + Theme.spaceXs
+                        height: Theme.rowHeight
+                        hoverEnabled: true
+                        onClicked: fileSearch.addExecutable()
+                        Row {
+                            id: addExeContent
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: Theme.spaceXs
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "\uE710" // MDL2 "Add" — orange, matches the Add-folder + 
+                                font.family: "Segoe MDL2 Assets"
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                color: Theme.appOutline
+                            }
+                            Text {
+                                id: addExeLabel
+                                text: "Add executable…"
+                                font.pixelSize: Theme.fontSizeTitle
+                                font.weight: Theme.fontWeightRegular
+                                color: addExeArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            }
+                        }
+                    }
+                }
+
+                // Right: "Show hidden (N)" (05.1) — visible whenever hidden
+                // entries exist (rule- AND user-hidden — the discoverability
+                // surface for the whole feature). Toggling reveals dimmed rows
+                // for Unhide (CUR-03).
+                MouseArea {
+                    id: showHiddenArea
+                    visible: resultsModel.hiddenCount > 0
+                    anchors.right: parent.right
+                    anchors.rightMargin: Theme.spaceLg
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: showHiddenLabel.width
+                    height: Theme.rowHeight
+                    hoverEnabled: true
+                    onClicked: resultsModel.setShowHidden(!resultsModel.showHidden)
                     Text {
+                        id: showHiddenLabel
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "Add executable…"
+                        text: resultsModel.showHidden
+                              ? "Hide hidden (" + resultsModel.hiddenCount + ")"
+                              : "Show hidden (" + resultsModel.hiddenCount + ")"
                         font.pixelSize: Theme.fontSizeTitle
                         font.weight: Theme.fontWeightRegular
-                        color: addExeArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                        color: showHiddenArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
                     }
                 }
             }
