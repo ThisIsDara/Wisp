@@ -401,14 +401,22 @@ Window {
                     resultsModel.setQuery(text); fileSearch.setQuery(text)
                 }
             }
-            // Thin separator under the field (UI-SPEC "1px surface hairline" —
-            // the same structural constant as the surface border.width above).
+            // Search-field focus identity (2026-08-15 UI pass): a 2px
+            // accentLight underline that fades in while the field owns focus
+            // (the field is focused on every open — LAUN-05 — so this bar IS
+            // the launcher's live state). Replaces the old static hairline —
+            // a dead 1px separator under the hero field read as "border",
+            // not "ready". Fades via the shared 120ms opacity-only
+            // micro-animation contract; overlays the 8px list gap, never
+            // participates in layout.
             Rectangle {
                 anchors.top: searchField.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: 1
-                color: Theme.border
+                height: Theme.searchUnderlineHeight
+                color: Theme.accentLight
+                opacity: searchField.activeFocus ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
             }
 
             // ── Results list (LAUN-05) ──
@@ -607,12 +615,17 @@ Window {
                     anchors.leftMargin: Theme.spaceLg   // aligns with the list's icon column
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Theme.spaceXs
+                    // 2026-08-15 (UI pass): the folder glyph is accent-tinted
+                    // ALWAYS — scanning folders is the launcher's primary
+                    // inventory path (07-06 pivot), and accentLight is the
+                    // established folder marker family (result-row ▸). The
+                    // hover read comes from the label, not the glyph.
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "\uE8B7" // MDL2 "Folder"
                         font.family: "Segoe MDL2 Assets"
                         font.pixelSize: Theme.fontSizeSubtitle
-                        color: addFolderArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                        color: Theme.accentLight
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
@@ -650,14 +663,30 @@ Window {
                     hoverEnabled: true
                     onClicked: fileSearch.addExecutable()
                 }
-                Text {
+                // 2026-08-15 (UI pass): paired with "Add folder to scan…" —
+                // same glyph slot (16px, leftMargin 16, spacing 4) so the two
+                // inventory rows read as one action family. The Add glyph is
+                // muted (textSecondary) — the folder row's accentLight marks
+                // the PRIMARY path; this row is the secondary one.
+                Row {
                     anchors.left: parent.left
                     anchors.leftMargin: Theme.spaceLg   // aligns with the list's icon column (2026-08-11)
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Add executable…"
-                    font.pixelSize: Theme.fontSizeTitle
-                    font.weight: Theme.fontWeightRegular
-                    color: Theme.textSecondary
+                    spacing: Theme.spaceXs
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "\uE710" // MDL2 "Add"
+                        font.family: "Segoe MDL2 Assets"
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        color: addExeArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Add executable…"
+                        font.pixelSize: Theme.fontSizeTitle
+                        font.weight: Theme.fontWeightRegular
+                        color: addExeArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                    }
                 }
             }
 
@@ -755,16 +784,25 @@ Item {
                     visible: resultsView.count === 0 && fileSearch.indexerOk
                     Column {
                         anchors.centerIn: parent
-                        spacing: Theme.spaceXs
-                        // D-11: 16px Segoe MDL2 Assets glyph above the message —
-                        // U+E721 "Search" (declared; present on Win10/11). Muted
-                        // textSecondary, never accent (accent reserved-list).
-                        Text {
+                        spacing: Theme.spaceSm
+                        // 2026-08-15 (UI pass): the composed well — U+E721
+                        // "Search" (declared; present on Win10/11) centered in
+                        // a 48px surfaceSecondary circle. Muted textSecondary
+                        // glyph, never accent (accent reserved-list) — the
+                        // well gives the state presence without shouting.
+                        Rectangle {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: "\uE721"
-                            font.family: "Segoe MDL2 Assets"
-                            font.pixelSize: Theme.emptyStateGlyphSize
-                            color: Theme.emptyStateGlyphColor
+                            width: Theme.emptyStateWellSize
+                            height: Theme.emptyStateWellSize
+                            radius: Theme.emptyStateWellRadius
+                            color: Theme.surfaceSecondary
+                            Text {
+                                anchors.centerIn: parent
+                                text: "\uE721"
+                                font.family: "Segoe MDL2 Assets"
+                                font.pixelSize: Theme.emptyStateWellGlyphSize
+                                color: Theme.emptyStateGlyphColor
+                            }
                         }
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter

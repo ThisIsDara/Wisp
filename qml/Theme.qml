@@ -72,6 +72,10 @@ QtObject {
     readonly property int scrollbarInset: 2       // thumb inset from the list's right edge (overlay)
     readonly property int scrollbarRadius: 3      // thumb corner radius
     readonly property int emptyStateGlyphSize: 16 // empty-state glyph (UI-SPEC Typography rule 4: fontSizeSubtitle × 4/3)
+    readonly property int emptyStateWellSize: 48  // empty-state glyph well (48px, 4-grid) — the composed well
+    readonly property int emptyStateWellRadius: 24 // fully rounded well (declared sub-grid garnish)
+    readonly property int emptyStateWellGlyphSize: 20 // glyph inside the well (declared between 15/18)
+    readonly property int searchUnderlineHeight: 2 // search-field focus bar (declared sub-grid — Windows 11 focus underline)
     readonly property int tickWidth: 5            // sliding selection tick width (2026-08-11 redesign)
     readonly property int tickHeight: 26          // tick height — compact, centered on the 44px row
     readonly property int tickRadius: 3           // tick corner radius (fully rounded ends)
@@ -106,6 +110,7 @@ QtObject {
     // Fields/rows (UI-SPEC Spacing Scale; row heights are 4-grid: 64/88/64/158)
     readonly property int fieldRadius: 6          // hotkey value well corner (tokenizes shipped capture-dialog literal)
     readonly property int fieldHeight: 36         // hotkey value well height (tokenizes shipped capture-dialog literal)
+    readonly property int stepperSize: 24         // interval ± chip footprint (= swatchSize, declared 4-grid)
     readonly property int settingsRowHotkey: 64
     readonly property int settingsRowAccent: 88
     readonly property int settingsRowAutostart: 64

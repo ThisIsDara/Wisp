@@ -164,7 +164,11 @@ Window {
                     height: Theme.fieldHeight
                     radius: Theme.fieldRadius
                     color: Theme.surfaceSecondary
-                    border.color: Theme.border
+                    // 2026-08-15 (UI pass): the well's Tab-focus state draws
+                    // an accentLight border — same focus identity as the
+                    // launcher's search underline (focus is a legit accent
+                    // family member; hover never is).
+                    border.color: parent.activeFocus ? Theme.accentLight : Theme.border
                     border.width: 1
                     activeFocusOnTab: true
                     Keys.onReturnPressed: (event) => { root.openHotkeyCapture(); event.accepted = true }
@@ -522,13 +526,26 @@ Window {
                             font.weight: Theme.fontWeightSemibold
                             color: Theme.textPrimary
                         }
-                        Text {
+                                                // 2026-08-15 (UI pass): −/+ as stepper chips —
+                        // 24px wells (same radius family as the field well),
+                        // hoverBg fill + textPrimary on hover. Before: bare
+                        // floating glyphs, the weakest element of the row.
+                        Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "−"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeSubtitle
-                            font.weight: Theme.fontWeightRegular
-                            color: minusHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            width: Theme.stepperSize
+                            height: Theme.stepperSize
+                            radius: Theme.fieldRadius
+                            color: minusHover.containsMouse ? Theme.hoverBg : Theme.surfaceSecondary
+                            border.color: Theme.border
+                            border.width: 1
+                            Text {
+                                anchors.centerIn: parent
+                                text: "−"
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightRegular
+                                color: minusHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            }
                             MouseArea {
                                 id: minusHover
                                 anchors.fill: parent
@@ -539,13 +556,22 @@ Window {
                                 }
                             }
                         }
-                        Text {
+                        Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "+"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeSubtitle
-                            font.weight: Theme.fontWeightRegular
-                            color: plusHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            width: Theme.stepperSize
+                            height: Theme.stepperSize
+                            radius: Theme.fieldRadius
+                            color: plusHover.containsMouse ? Theme.hoverBg : Theme.surfaceSecondary
+                            border.color: Theme.border
+                            border.width: 1
+                            Text {
+                                anchors.centerIn: parent
+                                text: "+"
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightRegular
+                                color: plusHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            }
                             MouseArea {
                                 id: plusHover
                                 anchors.fill: parent
@@ -568,7 +594,11 @@ Window {
                             width: 84
                             height: Theme.settingsRowScanItem
                             radius: Theme.fieldRadius
-                            color: Theme.accent
+                            // 2026-08-15 (UI pass): hover → accentDark (the
+                            // derived shade; white label keeps ≥4.5:1 per the
+                            // D-15 contrast guard) — the primary action now
+                            // reads as pressable, not a static badge.
+                            color: scanNowHover.containsMouse ? Theme.accentDark : Theme.accent
                             Text {
                                 anchors.centerIn: parent
                                 text: "Scan now"
@@ -578,7 +608,9 @@ Window {
                                 color: Theme.onAccentText
                             }
                             MouseArea {
+                                id: scanNowHover
                                 anchors.fill: parent
+                                hoverEnabled: true
                                 onClicked: {
                                     if (settingsController)
                                         settingsController.scanNow()
