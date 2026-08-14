@@ -28,6 +28,7 @@ qt_add_library(wisp_core STATIC
     src/core/AppCatalog.cpp
     src/core/FileSearch.cpp
     src/core/FileIndex.cpp
+    src/core/ScanService.cpp
     src/core/LaunchController.cpp
     src/core/LaunchHistory.cpp
     src/core/IconCache.cpp

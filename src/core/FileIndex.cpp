@@ -65,8 +65,20 @@ FileIndex::WalkOutcome FileIndex::walkAndDelta(
         snapshot = m_entries;
     }
 
+    // No roots → explicit WIPE (D-09 "no locations" semantics): every entry
+    // is removed and the memo cleared — a re-added root must re-walk from
+    // scratch (a stale memo would skip its re-list and the index would stay
+    // empty forever). Removals otherwise only occur in re-listed dirs, so
+    // the empty-roots case needs this dedicated path.
+    if (roots.isEmpty()) {
+        for (const auto &e : snapshot)
+            outcome.removed.insert(e.matchKey);
+        outcome.mtimes.clear();
+        return outcome;
+    }
+
     // Parent → direct-child lookup built once from the snapshot: removals are
-    // computed per re-listed dir against its OWN direct children only — the
+    // computed per re-listed dir against its own DIRECT children only — the
     // recursion decides subtree fate one level at a time, so a dir's removal
     // only ever needs the direct-child set (O(1) per dir after this pass).
     QHash<QString, QSet<QString>> childrenByParent;
