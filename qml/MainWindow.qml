@@ -865,7 +865,7 @@ Item {
                                 id: folderRow
                                 spacing: Theme.spaceXs
                                 Text {
-                                    text: "\uE8B7" // MDL2 "Folder"
+text: "\uE8F4" // MDL2 "NewFolder" (2026-08-15: 'add a folder')
                                     font.family: "Segoe MDL2 Assets"
                                     font.pixelSize: Theme.fontSizeSubtitle
                                     color: folderRowHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
