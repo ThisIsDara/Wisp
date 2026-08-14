@@ -268,12 +268,13 @@ void TstIndex::queryCandidatesPrefilter()
     index.apply(index.walkAndDelta(QStringList{root}, listFn));
     QCOMPARE(index.entryCount(), 150);
 
-    // Cap: 100 at most, never more.
+    // Cap: 1000 at most, never more (raised 07-06 — the default list IS the
+    // index now); 150 entries all fit.
     const auto all = index.queryCandidates(QStringLiteral("app"));
-    QCOMPARE(all.size(), 100);
+    QCOMPARE(all.size(), 150);
 
-    // Empty query → nothing (D-14: no empty-query default list from scan).
-    QVERIFY(index.queryCandidates(QString()).isEmpty());
+    // 07-06: empty query = the FULL executable default list (all .exe rows).
+    QCOMPARE(index.queryCandidates(QString()).size(), 150);
 
     // Subsequence semantics: "a2" matches App2.exe AND App12.exe, App20-29,
     // App32... (subsequence, not substring) — assert membership, not count.

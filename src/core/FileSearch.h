@@ -60,10 +60,10 @@ public:
     // QtConcurrent pool. nullptr (default) → global pool (production).
     void setPool(QThreadPool *pool);
 
-    // D-14: empty → immediate added-only snapshot (no debounce, no index
-    // query — the default list is catalog apps + manual picks, and a manual
-    // pick must join it instantly). Non-empty → restart the 150ms debounce;
-    // the LAST text wins when typing pauses.
+    // 07-06: empty → immediate full-list snapshot (the WHOLE index — all
+    // scanned .exe rows — plus manual picks, deduped; no debounce, no fuzzy
+    // pass: every row shows, alphabetical). Non-empty → restart the 150ms
+    // debounce; the LAST text wins when typing pauses.
     Q_INVOKABLE void setQuery(const QString &query);
     // D-11: pinned "Add executable…" row → dialog → store → immediate
     // re-dispatch (fresh generation) so the new exe appears right away.

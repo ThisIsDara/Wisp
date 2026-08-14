@@ -240,10 +240,10 @@ void ResultsModel::setFileResults(quint64 generation, const QString &query,
     m_fileGeneration = generation;
 
     if (m_query.isEmpty()) {
-        // D-14 (default list): the added-only snapshot (manual picks, CUR-04)
-        // refills the m_addedEntries channel and rebuilds the default list —
-        // a freshly added executable shows the instant the dialog closes.
-        // Sorted here for the buildAppOrder interleave (D-01 canonical order).
+        // 07-06 (default list): the executable launcher's default list — the
+        // snapshot FileSearch dispatched (index .exe rows + manual picks,
+        // deduped upstream) refills the m_addedEntries channel and rebuilds
+        // the default list. Sorted here for the buildAppOrder interleave.
         std::sort(files.begin(), files.end(), [](const AppEntry &a, const AppEntry &b) {
             return a.displayName.toCaseFolded() < b.displayName.toCaseFolded();
         });

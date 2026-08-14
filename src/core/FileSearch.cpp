@@ -3,6 +3,7 @@
 #include <QtConcurrent>
 
 #include "core/FuzzyMatcher.h"
+#include <QSet>
 
 // FileSearch coordinator (D-12..D-18): the typing-feel heart of the phase.
 // Threading (see the header contract): the debounce timer, m_generation and
@@ -134,16 +135,31 @@ void FileSearch::dispatch()
                 statusFn ? stateFromOrdinal(statusFn()) : FileSearchState::Idle;
 
             if (q.isEmpty()) {
-                // D-14 (default list): added-only snapshot. The curated
-                // catalog renders via the app pipeline; manual picks (CUR-04
-                // escape hatch) flow here. No index query, no fuzzy pass
-                // (every added entry shows), and no NoRoots/Error
-                // short-circuit — the default list must survive an index
-                // outage. Status still rides along (st) so the UI's
-                // stateChanged stays truthful when the query clears.
+                // 07-06 (default list): the executable launcher's default
+                // list = the WHOLE index (queryFn with empty text returns all
+                // .exe rows, folders filtered) PLUS manual picks, deduped by
+                // path with the manual pick WINNING (it's curated — hideable,
+                // keeps its icon; the D-03 analog of catalog-row-wins). No
+                // debounce (setQuery dispatches empty immediately), no fuzzy
+                // pass (every row shows). Status still rides along (st) so
+                // stateChanged stays truthful when the query clears. No
+                // NoRoots/Error short-circuit — an empty/wiped index returns
+                // {} harmlessly (the default list survives an index outage).
                 QVector<AppEntry> out;
                 if (added)
                     out = added();
+                QSet<QString> seen;
+                for (const AppEntry &e : out)
+                    seen.insert(e.targetPath.toCaseFolded());
+                if (queryFn) {
+                    const QueryResult idx = queryFn(q);
+                    for (const AppEntry &e : idx.entries) {
+                        if (seen.contains(e.targetPath.toCaseFolded()))
+                            continue; // manual pick already renders this path
+                        seen.insert(e.targetPath.toCaseFolded());
+                        out.append(e);
+                    }
+                }
                 return WorkerResult{ gen, q, out, st };
             }
 

@@ -92,14 +92,15 @@ void TstScan::realWalkIndexesExesAndFolders()
     QCOMPARE(exes.at(0).path, m_root + QStringLiteral("\\sub\\tool.exe"));
     QVERIFY(!exes.at(0).isFolder);
 
-    // Subsequence prefilter: "sub" also matches sub\tool.exe (path-wide) —
-    // assert the folder row is present and correctly flagged, not uniqueness.
+    // 07-06: folders stay INDEXED (entryCount 3 above — the removal sweep
+    // keys off them) but never surface in candidates — the executable
+    // launcher shows .exe rows only. "sub" still matches sub\tool.exe
+    // (path-wide subsequence); the folder row itself is filtered.
     const auto folder = index.queryCandidates(QStringLiteral("sub"));
-    bool foundFolder = false;
     for (const auto &c : folder)
-        if (c.path == m_root + QStringLiteral("\\sub") && c.isFolder)
-            foundFolder = true;
-    QVERIFY(foundFolder);
+        QVERIFY(!c.isFolder); // no folder rows in list/search
+    QCOMPARE(folder.size(), 1); // only sub\tool.exe surfaces
+    QCOMPARE(folder.at(0).path, m_root + QStringLiteral("\\sub\\tool.exe"));
 }
 
 void TstScan::skipListSkipsRealSubtrees()

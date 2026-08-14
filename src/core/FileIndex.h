@@ -58,7 +58,10 @@ public:
     bool load();       // corruption/tampering → false, index stays empty
 
     // Case-insensitive subsequence prefilter (A3 superset of FuzzyMatcher),
-    // capped at kCandidateCap. Empty query → {} (D-14).
+    // Case-insensitive subsequence prefilter — a superset of FuzzyMatcher
+    // acceptance (A3); the model re-ranks with the real scorer. Empty query →
+    // the FULL executable default list (07-06: the scan IS the list; folders
+    // are index-internal and never surface). Capped at kCandidateCap.
     QVector<IndexEntry> queryCandidates(const QString &query) const;
 
     int entryCount() const;
@@ -87,6 +90,7 @@ private:
 
     static constexpr quint32 kMagic = 0x57535031; // ASCII "WSP1"
     static constexpr quint32 kFormatVersion = 1;
-    static constexpr int kCandidateCap = 100; // research OQ5
+    static constexpr int kCandidateCap = 1000; // research OQ5; raised 07-06 — the default list
+                                             // IS the index now (executable launcher)
     static constexpr int kMaxDepth = 64;      // T-07-01 defense-in-depth
 };

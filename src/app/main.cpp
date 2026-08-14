@@ -118,7 +118,7 @@ int main(int argc, char *argv[])
     // kMaxFileRows=5. Runs on the FileSearch worker — never the UI thread.
     fileSearch.setQueryFn([&index](const QString &q) {
         return FileSearch::QueryResult{
-            FileIndex::toEntries(index.queryCandidates(q), /*cap=*/100), /*failed=*/false };
+            FileIndex::toEntries(index.queryCandidates(q), /*cap=*/1000), /*failed=*/false };
     });
     // D-16 on-query status — EXPLICIT ordinal map (never a blind cast) from
     // ScanService::ScanState to FileSearchState (07-03 → 07-04 contract):

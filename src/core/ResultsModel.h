@@ -90,11 +90,12 @@ public:
     // are dropped too — the generation proves recency, the text proves
     // relevance (a stale-text result can carry the current generation when it
     // lands inside the debounce window). Re-merges immediately when a query
-    // is active; an EMPTY-query delivery is the D-14 added-only snapshot — it
-    // refills the m_addedEntries channel and rebuilds the default list (apps
-    // + manual picks interleaved), so a freshly added executable appears the
-    // instant the pick dialog closes. The call must arrive on the UI thread
-    // (documented contract — the watcher completion in FileSearch guarantees it).
+    // is active; an EMPTY-query delivery is the 07-06 default-list snapshot
+    // (index .exe rows + manual picks, deduped upstream in FileSearch) — it
+    // refills the m_addedEntries channel and rebuilds the default list
+    // alphabetically, so scanned executables appear the instant a scan lands.
+    // The call must arrive on the UI thread (documented contract — the
+    // watcher completion in FileSearch guarantees it).
     void setFileResults(quint64 generation, const QString &query, QVector<AppEntry> files);
 
 signals:
@@ -137,8 +138,8 @@ private:
     bool m_showHidden = false;   // 05.1: show-hidden mode — reveals dimmed rows for Unhide
     HideStore m_hideStore;       // 05.1: persistence seam (CurationStore in production, spies in tests)
     static constexpr int kVisibleRows = 7;   // 640×400 shell ≈ 7 rows of 44px (UI-SPEC geometry)
-    static constexpr int kMaxFileRows = 100; // Phase-7 pivot (07-06): no catalog → file rows are THE
-                                             // list; the index pipeline already caps candidates at 100
-                                             // (FileIndex::toEntries), so this cap is effectively off
+    static constexpr int kMaxFileRows = 1000; // 07-06: file rows ARE the list; the index
+                                             // pipeline caps candidates at 1000 upstream,
+                                             // so this cap is effectively off
     static constexpr int kPathMatchScore = 100; // D-07 base tier below every name match
 };

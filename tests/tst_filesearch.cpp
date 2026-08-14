@@ -57,7 +57,7 @@ private slots:
     void debounceFiresOnceAfterQuiet_D12();
     void staleGenerationDropped_D15();
     void staleTextDroppedInDebounceWindow_WR03();
-    void emptyQueryAddedOnly_D14();
+    void emptyQueryDefaultList_0706();
     void noRootsSkipsQuery_D16();
     void errorSkipsQuery();
     void scanningQueriesAndReports_D17();
@@ -173,34 +173,42 @@ void TstFileSearch::staleTextDroppedInDebounceWindow_WR03()
     QCOMPARE(files.at(0).displayName, QStringLiteral("A.exe")); // both dispatches return the same row
 }
 
-void TstFileSearch::emptyQueryAddedOnly_D14()
+void TstFileSearch::emptyQueryDefaultList_0706()
 {
-    // D-14 (default list): empty query DISPATCHES an added-only snapshot —
-    // the curated catalog renders via the app pipeline, manual picks flow
-    // here. No index QueryFn call, and the delivery arrives instantly.
+    // 07-06 (default list): empty query DISPATCHES the full list snapshot —
+    // the WHOLE index (queryFn with empty text = all .exe rows) PLUS manual
+    // picks, deduped by path with the manual pick winning. No debounce (the
+    // delivery is immediate) and no fuzzy pass.
     FileSearch fs;
     fs.setPool(&m_pool);
     std::atomic<int> calls{ 0 };
     fs.setQueryFn([&](const QString &) {
         ++calls;
-        return FileSearch::QueryResult{};
+        return FileSearch::QueryResult{
+            { fileEntry(QStringLiteral("Alpha.exe"), QStringLiteral("C:\\a\\Alpha.exe")),
+              fileEntry(QStringLiteral("Beta.exe"), QStringLiteral("C:\\b\\Beta.exe")),
+              fileEntry(QStringLiteral("Gamma.exe"), QStringLiteral("C:\\g\\Gamma.exe")) },
+            false
+        };
     });
     std::atomic<int> addedCalls{ 0 };
     fs.setAddedSource([&] {
         ++addedCalls;
-        return QVector<AppEntry>{ fileEntry(QStringLiteral("A.exe"), QStringLiteral("C:\\a\\A.exe")) };
+        return QVector<AppEntry>{ fileEntry(QStringLiteral("MyTool.exe"), QStringLiteral("C:\\b\\Beta.exe")) };
     });
     QSignalSpy results(&fs, &FileSearch::resultsReady);
 
     fs.setQuery(QString());
-    QVERIFY(results.wait(kWaitGenerous)); // the added-only snapshot delivers
-    QCOMPARE(calls.load(), 0);            // D-14: no index query on empty
+    QVERIFY(results.wait(kWaitGenerous)); // the full-list snapshot delivers
+    QCOMPARE(calls.load(), 1);            // the index snapshot IS queried now
     QCOMPARE(addedCalls.load(), 1);
     QCOMPARE(results.count(), 1);
     QCOMPARE(results.first().at(1).toString(), QString()); // carries the empty query
     const QVector<AppEntry> files = results.first().at(2).value<QVector<AppEntry>>();
-    QCOMPARE(files.size(), 1);
-    QCOMPARE(files.at(0).displayName, QStringLiteral("A.exe"));
+    QCOMPARE(files.size(), 3); // 3 index rows + 1 pick − 1 deduped duplicate
+    QCOMPARE(files.at(0).displayName, QStringLiteral("MyTool.exe")); // manual pick wins
+    QCOMPARE(files.at(1).displayName, QStringLiteral("Alpha.exe"));
+    QCOMPARE(files.at(2).displayName, QStringLiteral("Gamma.exe"));
 }
 
 void TstFileSearch::noRootsSkipsQuery_D16()

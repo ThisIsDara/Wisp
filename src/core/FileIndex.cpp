@@ -275,26 +275,33 @@ bool FileIndex::load()
 
 QVector<FileIndex::IndexEntry> FileIndex::queryCandidates(const QString &query) const
 {
-    if (query.isEmpty())
-        return {}; // no empty-query default list from the scan (D-14)
     const QString folded = query.toCaseFolded();
     const QMutexLocker lock(&m_mutex);
     QVector<IndexEntry> out;
     out.reserve(kCandidateCap);
     for (const auto &e : m_entries) {
-        // Case-insensitive subsequence two-pointer prefilter — a superset of
-        // FuzzyMatcher acceptance (A3): anything FuzzyMatcher would accept is
-        // already a subsequence of the folded path.
-        int qi = 0;
-        const int ql = folded.size();
-        for (int mi = 0; mi < e.matchKey.size() && qi < ql; ++mi)
-            if (e.matchKey.at(mi) == folded.at(qi))
-                ++qi;
-        if (qi == ql) {
+        // 07-06: executable launcher — folders are index-internal structure
+        // (the removal sweep keys off them) but never surface in list/search.
+        if (e.isFolder)
+            continue;
+        if (query.isEmpty()) {
+            // 07-06: empty query = the FULL executable default list (the
+            // index only holds .exe rows, so this IS the launcher inventory).
             out.append(e);
-            if (out.size() >= kCandidateCap)
-                break;
+        } else {
+            // Case-insensitive subsequence two-pointer prefilter — a superset
+            // of FuzzyMatcher acceptance (A3): anything FuzzyMatcher would
+            // accept is already a subsequence of the folded path.
+            int qi = 0;
+            const int ql = folded.size();
+            for (int mi = 0; mi < e.matchKey.size() && qi < ql; ++mi)
+                if (e.matchKey.at(mi) == folded.at(qi))
+                    ++qi;
+            if (qi == ql)
+                out.append(e);
         }
+        if (out.size() >= kCandidateCap)
+            break;
     }
     return out;
 }
