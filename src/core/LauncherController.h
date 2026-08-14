@@ -32,6 +32,17 @@ public:
     // Inject a fullscreen-state probe; default = live QUNS query.
     void setFullscreenGuard(std::function<WinFullscreenGuard::State()> guard);
 
+    // 07-06 seam: the empty-state "Select a folder to scan" action. The
+    // WHOLE flow (native picker → SettingsStore append → ScanService
+    // requestScan) is wired in main.cpp — QFileDialog lives in QtWidgets,
+    // which wisp_core never links (FileSearch::setAddExeDialog precedent).
+    // Default = no-op → the QML row does nothing until main.cpp wires it.
+    using ScanFolderAdder = std::function<void()>;
+    void setScanFolderAdder(ScanFolderAdder fn);
+
+    // QML entry point (MainWindow.qml empty state): pick a folder to scan.
+    Q_INVOKABLE void addScanRoot();
+
     // True when the passive hotkey path may show: fullscreen content defers
     // (HOTK-04 / D-02.3). AcceptsNotifications and Other are showable.
     bool canShow() const;
@@ -71,5 +82,6 @@ private:
     State m_state = Hidden;
     QPointer<QQuickWindow> m_win;
     std::function<WinFullscreenGuard::State()> m_guard = &WinFullscreenGuard::currentState;
+    ScanFolderAdder m_scanFolderAdder;
     QTimer *m_graceTimer;
 };

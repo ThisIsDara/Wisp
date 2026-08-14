@@ -50,6 +50,19 @@ void LauncherController::setFullscreenGuard(std::function<WinFullscreenGuard::St
     m_guard = std::move(guard);
 }
 
+void LauncherController::setScanFolderAdder(ScanFolderAdder fn)
+{
+    m_scanFolderAdder = std::move(fn);
+}
+
+void LauncherController::addScanRoot()
+{
+    // No-op until main.cpp wires the seam (picker + store + scan) — a
+    // bare controller stays test-safe and window-light.
+    if (m_scanFolderAdder)
+        m_scanFolderAdder();
+}
+
 bool LauncherController::canShow() const
 {
     return m_guard() != WinFullscreenGuard::FullscreenActive;

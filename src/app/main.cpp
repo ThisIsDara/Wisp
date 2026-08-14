@@ -267,10 +267,25 @@ int main(int argc, char *argv[])
                                   &hotkeys, &capture, &scanService, &app);
     // 07-05: QFileDialog lives in QtWidgets (wisp_core does not link it) —
     // the native folder picker is injected here (FileSearch::setAddExeDialog
-    // precedent, main.cpp:124-127).
-    settingsWindow.setFolderPicker([] {
+    // precedent, main.cpp:124-127) and SHARED by both consumers below.
+    const auto pickFolder = [] {
         return QFileDialog::getExistingDirectory(
             nullptr, QStringLiteral("Add scan location"), QDir::homePath());
+    };
+    settingsWindow.setFolderPicker(pickFolder);
+    // 07-06: the launcher's empty-state "Select a folder to scan" — same
+    // picker, then persist the root (Pitfall-5 normalization inside
+    // setScanRoots) and start scanning immediately (D-09 first-root flow).
+    controller.setScanFolderAdder([&settingsStore, &scanService, pickFolder] {
+        const QString dir = pickFolder();
+        if (dir.isEmpty())
+            return; // cancelled → nothing (D-11 cancel discipline)
+        QStringList roots = settingsStore.scanRoots();
+        if (roots.contains(QDir::toNativeSeparators(dir)))
+            return; // duplicate root → no-op
+        roots.append(dir);
+        settingsStore.setScanRoots(roots);
+        scanService.requestScan(); // D-09: scan starts the moment a root exists
     });
 
     if (window && QSystemTrayIcon::isSystemTrayAvailable()) {

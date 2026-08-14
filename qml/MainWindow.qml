@@ -702,41 +702,72 @@ Window {
             // D-18 gate: when the indexer is troubled AND the list is empty,
             // the status row below takes the space (same area as "No
             // results…"); when results exist, both stay truthful.
-            Item {
-                id: emptyState
-                anchors.fill: resultsView
-                visible: resultsView.count === 0 && fileSearch.indexerOk
-                Column {
-                    anchors.centerIn: parent
-                    spacing: Theme.spaceXs
-                    // D-11: 16px Segoe MDL2 Assets glyph above the message —
-                    // U+E721 "Search" (declared; present on Win10/11). Muted
-                    // textSecondary, never accent (accent reserved-list).
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: "\uE721"
-                        font.family: "Segoe MDL2 Assets"
-                        font.pixelSize: Theme.emptyStateGlyphSize
-                        color: Theme.emptyStateGlyphColor
-                    }
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: resultsModel.query === ""
-                              ? "Recent apps will appear here"
-                              : "No results for \"" + resultsModel.query + "\""
-                        font.pixelSize: Theme.fontSizeTitle
-                        font.weight: Theme.fontWeightRegular
-                        color: Theme.textSecondary
-                    }
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: "Press Esc to close"
-                        font.pixelSize: Theme.fontSizeSubtitle
-                        font.weight: Theme.fontWeightRegular
-                        color: Theme.textSecondary
+Item {
+                    id: emptyState
+                    anchors.fill: resultsView
+                    visible: resultsView.count === 0 && fileSearch.indexerOk
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: Theme.spaceXs
+                        // D-11: 16px Segoe MDL2 Assets glyph above the message —
+                        // U+E721 "Search" (declared; present on Win10/11). Muted
+                        // textSecondary, never accent (accent reserved-list).
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "\uE721"
+                            font.family: "Segoe MDL2 Assets"
+                            font.pixelSize: Theme.emptyStateGlyphSize
+                            color: Theme.emptyStateGlyphColor
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: resultsModel.query === ""
+                                  ? "Recent apps will appear here"
+                                  : "No results for \"" + resultsModel.query + "\""
+                            font.pixelSize: Theme.fontSizeTitle
+                            font.weight: Theme.fontWeightRegular
+                            color: Theme.textSecondary
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "Press Esc to close"
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightRegular
+                            color: Theme.textSecondary
+                        }
+                        // 07-06: "Select a folder to scan" — the empty-QUERY
+                        // branch only (a live query has its own flow); whole
+                        // action wired in main.cpp (picker → store → scan).
+                        Item {
+                            width: folderRow.implicitWidth
+                            height: folderRow.implicitHeight
+                            visible: resultsModel.query === ""
+                            Row {
+                                id: folderRow
+                                spacing: Theme.spaceXs
+                                Text {
+                                    text: "\uE8B7" // MDL2 "Folder"
+                                    font.family: "Segoe MDL2 Assets"
+                                    font.pixelSize: Theme.fontSizeSubtitle
+                                    color: folderRowHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                                }
+                                Text {
+                                    text: "Select a folder to scan"
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeSubtitle
+                                    font.weight: Theme.fontWeightRegular
+                                    color: folderRowHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                                }
+                            }
+                            MouseArea {
+                                id: folderRowHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: launcherController.addScanRoot()
+                            }
+                        }
                     }
                 }
-            }
 
             // ── D-04 no-roots prompt: the empty-QUERY branch of the status
             // row. Gates: no query typed AND file backend troubled (no roots
@@ -769,6 +800,35 @@ Window {
                         font.pixelSize: Theme.fontSizeTitle
                         font.weight: Theme.fontWeightRegular
                         color: Theme.textSecondary
+                    }
+                    // 07-06: direct "start" action — pick a folder without
+                    // going through Settings first (same main.cpp wiring).
+                    Item {
+                        width: folderRow2.implicitWidth
+                        height: folderRow2.implicitHeight
+                        Row {
+                            id: folderRow2
+                            spacing: Theme.spaceXs
+                            Text {
+                                text: "\uE8B7" // MDL2 "Folder"
+                                font.family: "Segoe MDL2 Assets"
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                color: folderRowHover2.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            }
+                            Text {
+                                text: "Select a folder to scan"
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightRegular
+                                color: folderRowHover2.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                            }
+                        }
+                        MouseArea {
+                            id: folderRowHover2
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: launcherController.addScanRoot()
+                        }
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
