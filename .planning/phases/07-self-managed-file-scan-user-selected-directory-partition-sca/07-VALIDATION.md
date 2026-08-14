@@ -19,7 +19,7 @@ created: 2026-08-14
 |----------|-------|
 | **Framework** | Qt Test (CTest/QTest) — existing `tests/tst_*` pattern |
 | **Config file** | CMakeLists.txt (root) — `enable_testing()` + per-tst targets |
-| **Quick run command** | `ctest --test-dir build --output-on-failure` |
+| **Quick run command** | `ctest --test-dir build/dev --output-on-failure` |
 | **Full suite command** | same as quick run (project convention — single suite) |
 | **Estimated runtime** | ~10 seconds |
 
@@ -27,7 +27,7 @@ created: 2026-08-14
 
 ## Sampling Rate
 
-- **After every task commit:** Run `ctest --test-dir build --output-on-failure`
+- **After every task commit:** Run `ctest --test-dir build/dev --output-on-failure`
 - **After every plan wave:** Run the full suite + build the app
 - **Before `/gsd-verify-work`:** Full suite must be green
 - **Max feedback latency:** ~15 seconds
