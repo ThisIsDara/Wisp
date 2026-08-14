@@ -154,10 +154,14 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 ### Phase 7: Self-Managed File Scan: user-selected directory/partition scanning for executables, replacing Windows Search
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Windows Search is deleted; wisp scans user-selected roots (Settings "Scan locations" section) for `.exe` + folder entries into a persistent on-disk index (`wisp-index.dat`), queried through the existing FileSearch pipeline (debounce, generation, dedupe app-row-wins). Scans are incremental (per-dir mtime re-walk) on a dedicated low-priority worker — default 10-min interval (1..1440) + "Scan now", no scan at boot, no-roots prompt until the user picks locations.
+**Requirements**: LAUN-02, LAUN-03
 **Depends on:** Phase 6
-**Plans:** 0 plans
+**Plans:** 5 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 7 to break down)
+- [ ] 07-01 (Wave 1) WinDirectoryWalk firewall + FileIndex (skip-list, mtime delta, atomic persistence) + tst_scan/tst_index
+- [ ] 07-02 (Wave 1) ResultsModel::mergeFiles scan-row suppression vs app catalog (D-03) + tst_model
+- [ ] 07-03 (Wave 2) ScanService orchestrator (single-flight, dedicated pool, interval, scanNow, lastScanSummary) + tst_scan
+- [ ] 07-04 (Wave 3) FileSearch states → {Idle,NoRoots,Scanning,Error}, main.cpp rewiring, WinSearchQuery/tst_search deletion, MainWindow no-roots prompt
+- [ ] 07-05 (Wave 4) Theme growth 360→560, SettingsStore scan keys, Settings "Scan locations" section + QML + tst_settings

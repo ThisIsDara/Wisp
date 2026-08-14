@@ -79,7 +79,7 @@ Two verified integration facts the planner must handle: (1) `qml/MainWindow.qml`
 |---------|---------|---------|-------------|
 | QTimer | Qt 6.11.1 (present) | Interval tick (D-09) | UI-thread single-shot; triggers a scan dispatch with roots snapshot |
 | QStandardPaths::AppDataLocation | Qt 6.11.1 (present) | Index file location | Resolves to `%APPDATA%\TID\wisp\` (org TID / app wisp, main.cpp:53-54) — same folder as wisp.ini |
-| Qt Test (existing) | Qt 6.11.1 (present) | Unit/integration tests | 17 suites registered in CMakeLists.txt; ctest 17/17 baseline (STATE.md) |
+| Qt Test (existing) | Qt 6.11.1 (present) | Unit/integration tests | 19 suites registered in CMakeLists.txt; ctest 19/19 baseline (verified by plan-checker against CMakeLists.txt) |
 
 ### Alternatives Considered
 | Instead of | Could Use | Tradeoff |
@@ -360,26 +360,31 @@ QVector<IndexEntry> FileIndex::queryCandidates(const QString &query) const
 | A3 | `FuzzyMatcher::score > 0 ⟺ case-insensitive subsequence` (verified by reading FuzzyMatcher.cpp: linear subsequence scan, score 0 = no match) — the prefilter never misses a row the model accepts, because displayName ⊂ path | Code Example 3 | If scoring semantics ever change, prefilter must change with it (guarded by tst_index + tst_model cross-checks) |
 | A4 | Loading a ~50-100k-entry QDataStream index takes well under the launch budget (~tens of ms) | D-07 | If it measures slow, move load to the startup worker and gate the status row on "index ready" — planner should include the measurement in the plan's verification |
 
-## Open Questions
+## Open Questions (RESOLVED — implemented by plans)
 
 1. **Settings window geometry (verified blocker):** 480×360 fixed with 318/328px consumed — the scan-locations section cannot fit without change.
    - What we know: qml/SettingsWindow.qml:111-112 budget; rows are token-driven; UI-SPEC calls the window "fixed 480×360".
    - What's unclear: whether growing `Theme.settingsWindowHeight` (recommended, ~480×560) violates the UI-SPEC Geometry contract or whether a ScrollView is preferred.
-   - Recommendation: grow the token (the UI-SPEC governs the launcher shell; the settings surface is a 06-era token) and verify in the UI-phase gate; fall back to ScrollView if the spec review objects.
+   - **RESOLVED → 07-05:** grow `Theme.settingsWindowHeight` 360→560 / `settingsSurfaceHeight` 328→528 (token change; settings surface is a 06-era token, not the UI-SPEC launcher shell).
 
 2. **State enum rename vs ordinal reuse:**
    - What we know: QML consumes only strings; `stateFromOrdinal` maps defensively.
-   - Recommendation: rename members `{Idle, NoRoots, Scanning, Error}` — clarity wins, zero QML impact; main.cpp maps new → `FileSearchState` explicitly (existing switch pattern, main.cpp:114-122).
+   - **RESOLVED → 07-04:** rename members `{Idle, NoRoots, Scanning, Error}`; QML consumes only statusText/indexerOk, ordinal mapped explicitly in main.cpp.
 
 3. **Skip-list exact contents (D-06):** attribute-based skips (hidden/system dirs, reparse points) are free and fixed; name-based list is planner's call. Suggested seed set (case-insensitive, leaf-name match): `Windows`, `ProgramData`, `AppData`, `WindowsApps`, `node_modules`, `.git`, `.svn`, `.hg`, `.gradle`, `.m2`, `.cargo`, `$RECYCLE.BIN`, `System Volume Information`, `msocache`, `config.msi`. Rationale: the .exe-only filter already removes most noise; the list mostly saves walk time — keep it small and system-aligned, don't chase dev-tool chains the user may actually want indexed.
+   - **RESOLVED → 07-01:** seed skip-list = the suggested set above; attribute-based skips (hidden/system/reparse) free and fixed.
 
 4. **Interval bounds (D-09):** recommend min 1 min / max 24 h, default 10 min (integer minutes; a QML SpinBox or combo of presets — planner's UI call).
+   - **RESOLVED → 07-03/07-05:** `qBound(1, intervalMinutes, 1440)` at store + service consumption sites; default 10.
 
 5. **Candidate cap for queryCandidates:** recommend ~100 (model caps display at 5; the cap bounds per-keystroke work; linear scan of full index with early exit is fine at this scale).
+   - **RESOLVED → 07-01:** `kCandidateCap = 100` in FileIndex::queryCandidates.
 
 6. **"Scan now" + first-root-added trigger placement:** first scan after the FIRST root is added (D-09) — recommend `ScanService` watches a roots-changed signal from the controller (UI thread) and dispatches; interval timer starts/stops with root count (no roots → no timer).
+   - **RESOLVED → 07-05/07-03:** Settings first-root trigger dispatches scan; interval timer runs only with roots non-empty.
 
 7. **Per-root failure granularity:** a root that's gone (removed USB drive) should degrade to the Error state with the prompt copy (or a per-root badge in Settings — nice-to-have), not a global "unavailable". Recommend: global Error state + lastScan summary shows failed roots count.
+   - **RESOLVED → 07-03:** global Error state; lastScanSummary includes failed roots count.
 
 ## Environment Availability
 
@@ -389,7 +394,7 @@ QVector<IndexEntry> FileIndex::queryCandidates(const QString &query) const
 | MSVC 2022 (v143) + vcvars64 | Toolchain | ✓ | VS2022 Community (build.ps1 vcvars64 path) | — |
 | CMake + Ninja | Build | ✓ | CMake 4.3.4 | — |
 | Windows SDK (FindFirstFileExW, FILETIME) | WinDirectoryWalk | ✓ | Via vcvars64 (WindowsSdkDir consumed at CMakeLists.txt:51) | — |
-| ctest baseline | Validation | ✓ | 17/17 green (STATE.md) | — |
+| ctest baseline | Validation | ✓ | 19/19 green (verified against CMakeLists.txt) | — |
 
 **Missing dependencies with no fallback:** None. **Missing dependencies with fallback:** None — the phase adds no external tools, services, or databases; the only "new" dependency is the Windows SDK's kernel32 (present on every Windows 10/11 target).
 
@@ -398,7 +403,7 @@ QVector<IndexEntry> FileIndex::queryCandidates(const QString &query) const
 ### Test Framework
 | Property | Value |
 |----------|-------|
-| Framework | Qt Test (QTest) via CTest — 17 suites registered (CMakeLists.txt:93-183) |
+| Framework | Qt Test (QTest) via CTest — 19 suites registered (CMakeLists.txt:93-183) |
 | Config file | none — CMake `include(CTest)` block; binaries get Qt DLL PATH via `ENVIRONMENT_MODIFICATION` (CMakeLists.txt:175-183) |
 | Quick run command | `ctest --test-dir build/dev -R tst_filesearch --output-on-failure` (build dir verified in CMakeLists.txt:174) |
 | Full suite command | `ctest --test-dir build/dev --output-on-failure` |
@@ -418,7 +423,7 @@ QVector<IndexEntry> FileIndex::queryCandidates(const QString &query) const
 ### Sampling Rate
 - **Per task commit:** single targeted suite, e.g. `ctest --test-dir build/dev -R tst_scan --output-on-failure`
 - **Per wave merge:** full suite `ctest --test-dir build/dev --output-on-failure`
-- **Phase gate:** full suite green before `/gsd-verify-work` (baseline 17/17 must hold after tst_search removal; suite count changes to 18 with tst_scan+tst_index and no tst_search)
+- **Phase gate:** full suite green before `/gsd-verify-work` (baseline 19/19 must hold after tst_search removal; suite count changes to 20 with tst_scan+tst_index and no tst_search)
 
 ### Wave 0 Gaps
 - [ ] `tests/tst_search.cpp` — DELETE with `src/win/WinSearchQuery.{h,cpp}` and the CMake block (lines 139-141); its 3 slots tested WinSearchQuery helpers only
