@@ -132,24 +132,37 @@ Window {
                 width: parent.width
                 spacing: Theme.spaceMd
 
-                // SV square — two-stop hue gradient (the CURRENT hue) plus a
-                // vertical transparent→black overlay (UI-SPEC Geometry).
+                // SV square — saturation (X) × value (Y) plane. Canvas-painted
+                // (2026-08-15): the old two-stop QML Gradient is VERTICAL-ONLY,
+                // so the X axis had no visual effect — dragging horizontally
+                // changed the readout but not the square, i.e. a broken palette.
+                // Now a real plane: white→hue horizontally (saturation), then a
+                // transparent→black vertical overlay (value). Re-paints on hue
+                // change (the whole plane re-renders under the new hue).
                 Rectangle {
                     id: svSquare
                     width: Theme.svSize
                     height: Theme.svSize
                     radius: Theme.fieldRadius
                     clip: true
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: "white" }
-                        GradientStop { position: 1.0; color: Qt.hsla(root.stageHue, 1.0, 0.5, 1.0) }
-                    }
-                    Rectangle {
+                    Canvas {
                         anchors.fill: parent
-                        gradient: Gradient {
-                            GradientStop { position: 0.0; color: "transparent" }
-                            GradientStop { position: 1.0; color: "black" }
+                        property color hueColor: Qt.hsla(root.stageHue, 1.0, 0.5, 1.0)
+                        onPaint: {
+                            var c = getContext("2d")
+                            c.reset()
+                            var sat = c.createLinearGradient(0, 0, width, 0) // saturation along X
+                            sat.addColorStop(0, "white")
+                            sat.addColorStop(1, hueColor)
+                            c.fillStyle = sat
+                            c.fillRect(0, 0, width, height)
+                            var val = c.createLinearGradient(0, 0, 0, height) // value along Y
+                            val.addColorStop(0, Qt.rgba(0, 0, 0, 0))
+                            val.addColorStop(1, "black")
+                            c.fillStyle = val
+                            c.fillRect(0, 0, width, height)
                         }
+                        onHueColorChanged: requestPaint()
                     }
                     MouseArea {
                         anchors.fill: parent

@@ -601,7 +601,12 @@ Window {
                         width: Theme.tickWidth
                         height: Theme.tickHeight
                         radius: Theme.tickRadius
-                        color: Theme.accentLight
+                        // 2026-08-15: the selection indicator is the EXACT
+                        // picked accent (was accentLight — Qt.lighter(1.45)
+                        // rendered the tick a paler, washed-out shade of the
+                        // selected color). The row bg is accent too, so the
+                        // selected row reads uniformly as the chosen color.
+                        color: Theme.accent
                     }
                 }
                 // NEVER auto-scroll the viewport on selection change: hover
