@@ -135,6 +135,17 @@ void HotkeyManager::setHotkey(const QKeySequence &seq)
     if (seq == m_hotkey)
         return;
 
+    // While suspended (capture dialog open) the combo is already released;
+    // swap the target only — resume() performs the actual registration so a
+    // single registration point holds (no double-register/double-fallback).
+    if (m_suspended) {
+        m_hotkey = seq;
+        m_settings->setValue(QStringLiteral("hotkey/sequence"), seq.toString());
+        m_settings->sync();
+        emit hotkeyChanged(seq);
+        return;
+    }
+
     const QKeyCombination combo = seq[0];
     const quint32 mods = qtModsToWin(combo.keyboardModifiers()) | MOD_NOREPEAT;
     const quint32 vk = qtKeyToVk(combo.key());
@@ -157,4 +168,44 @@ void HotkeyManager::setHotkey(const QKeySequence &seq)
     m_settings->setValue(QStringLiteral("hotkey/sequence"), seq.toString());
     m_settings->sync();
     emit hotkeyChanged(seq);
+}
+
+void HotkeyManager::suspend()
+{
+    if (m_suspended)
+        return;
+    m_preSuspendCombo = m_hotkey;
+    m_winHotkey->unregisterAll();
+    m_suspended = true;
+}
+
+void HotkeyManager::resume()
+{
+    if (!m_suspended)
+        return;
+    m_suspended = false;
+
+    if (sequenceInvalid(m_hotkey)) {
+        emit registrationFailed(m_hotkey.toString());
+        return;
+    }
+
+    const QKeyCombination combo = m_hotkey[0];
+    const quint32 mods = qtModsToWin(combo.keyboardModifiers()) | MOD_NOREPEAT;
+    const quint32 vk = qtKeyToVk(combo.key());
+
+    // Availability-left, same as setHotkey: if the current combo can't be
+    // re-registered (another app grabbed it while we were suspended), fall
+    // back to the pre-capture combo and surface the conflict.
+    if (m_winHotkey->registerCombo(kHotkeyId, mods, vk))
+        return;
+
+    if (!m_preSuspendCombo.isEmpty() && m_preSuspendCombo != m_hotkey) {
+        const QKeyCombination oldCombo = m_preSuspendCombo[0];
+        m_winHotkey->registerCombo(
+            kHotkeyId,
+            qtModsToWin(oldCombo.keyboardModifiers()) | MOD_NOREPEAT,
+            qtKeyToVk(oldCombo.key()));
+    }
+    emit registrationFailed(m_hotkey.toString());
 }

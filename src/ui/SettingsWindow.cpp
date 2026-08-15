@@ -226,6 +226,9 @@ void SettingsWindow::setFolderPicker(FolderPicker fn)
 
 void SettingsWindow::openHotkeyCapture()
 {
+    // HOTK-04: release the global combo while capturing (same reason as the
+    // tray handoff in main.cpp) — resume() on accept/cancel re-arms it.
+    m_hotkeys->suspend();
     if (m_capture)
         m_capture->open(currentHotkey());
 }

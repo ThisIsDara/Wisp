@@ -32,6 +32,16 @@ public:
     // combo remains registered.
     void setHotkey(const QKeySequence &seq);
 
+    // Capture-dialog support: release the global combo while the capture
+    // dialog is open so the combo being captured (e.g. the current one,
+    // Alt+Space) is NOT swallowed by our own system-wide registration —
+    // otherwise WM_HOTKEY fires and the keystroke never reaches QML.
+    // resume() re-registers the current combo (availability-left: on an OS
+    // conflict the pre-capture combo is restored and registrationFailed
+    // fires — never silent).
+    void suspend();
+    void resume();
+
 signals:
     void hotkeyPressed();
     void registrationFailed(const QString &combo);
@@ -41,4 +51,6 @@ private:
     WinHotkey *m_winHotkey;
     QSettings *m_settings;
     QKeySequence m_hotkey;
+    QKeySequence m_preSuspendCombo;
+    bool m_suspended = false;
 };

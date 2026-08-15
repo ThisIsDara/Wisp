@@ -327,11 +327,20 @@ int main(int argc, char *argv[])
         QObject::connect(&tray, &TrayIcon::openWisp,
                          &controller, &LauncherController::showUserRequested); // explicit intent bypasses guard
         QObject::connect(&tray, &TrayIcon::changeHotkeyRequested, &capture, [&capture, &hotkeys] {
+            // HOTK-04: release the global combo while capturing — otherwise our
+            // own RegisterHotKey(NULL,...) intercepts e.g. Alt+Space system-wide
+            // and the keystroke never reaches the QML capture field.
+            hotkeys.suspend();
             capture.open(hotkeys.hotkey().toString());
         });
         QObject::connect(&capture, &HotkeyCaptureDialog::accepted, &hotkeys,
                          [&hotkeys](const QString &seq) {
                              hotkeys.setHotkey(QKeySequence(seq)); // re-register + persist (D-02.5/6)
+                             hotkeys.resume();                     // re-arm the (possibly new) combo
+                         });
+        QObject::connect(&capture, &HotkeyCaptureDialog::cancelled, &hotkeys,
+                         [&hotkeys] {
+                             hotkeys.resume(); // restore the suspended combo
                          });
         // D-04: settings opens from the tray ONLY (no launcher affordance).
         QObject::connect(&tray, &TrayIcon::settingsRequested,
