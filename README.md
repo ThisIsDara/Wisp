@@ -1,3 +1,14 @@
+<p align="center">
+  <img src="assets/icons/wisp-01.png" width="96" alt="wisp icon">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/ThisIsDara/Wisp" alt="Latest release">
+  <img src="https://img.shields.io/github/downloads/ThisIsDara/Wisp/total" alt="Total downloads">
+  <img src="https://img.shields.io/github/downloads/ThisIsDara/Wisp/latest/total" alt="Latest release downloads">
+  <img src="https://img.shields.io/github/license/ThisIsDara/Wisp" alt="License">
+</p>
+
 # wisp
 
 An instant app launcher for Windows 10/11. Press `Alt+Space`, type a few
