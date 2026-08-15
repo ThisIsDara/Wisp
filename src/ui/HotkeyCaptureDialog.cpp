@@ -1,10 +1,31 @@
 #include "ui/HotkeyCaptureDialog.h"
 
+#include "win/WinKeyCapture.h"
+
+#include <QGuiApplication>
 #include <QMetaObject>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScreen>
+
+namespace {
+
+// UI-SPEC Geometry: re-centered on the primary screen on EVERY open (same
+// contract as SettingsWindow::centerOnPrimary) — the QML onCompleted
+// positioning is first-show-only and unreliable for dynamically-created
+// windows, leaving the dialog at the top-left on later opens.
+void centerOnPrimary(QQuickWindow *win)
+{
+    if (QScreen *screen = QGuiApplication::primaryScreen()) {
+        const QRect avail = screen->availableGeometry();
+        win->setX(avail.x() + (avail.width() - win->width()) / 2);
+        win->setY(avail.y() + (avail.height() - win->height()) / 2);
+    }
+}
+
+} // namespace
 
 namespace {
 
@@ -25,7 +46,16 @@ bool tokenIsModifier(const QString &token)
 HotkeyCaptureDialog::HotkeyCaptureDialog(QQmlEngine *engine, QObject *parent)
     : QObject(parent)
     , m_engine(engine)
+    , m_keyCapture(new WinKeyCapture(this))
 {
+    // Windows eats Alt+Space (system-menu combo) before it reaches the QML
+    // capture field — even with our own global hotkey suspended. The
+    // low-level hook swallows it and reports the combo here.
+    connect(m_keyCapture, &WinKeyCapture::altSpaceCaptured, this,
+            [this](const QString &portable) {
+                if (m_dialog)
+                    m_dialog->setProperty("capturedSequence", portable);
+            });
 }
 
 bool HotkeyCaptureDialog::validateSequence(const QString &portable)
@@ -55,10 +85,12 @@ void HotkeyCaptureDialog::open(const QString &currentSequence)
         // refresh the seed text, re-show, refocus the capture field. The
         // QML side resets capturedSequence on hide (onVisibleChanged).
         m_dialog->setProperty("currentSequence", currentSequence);
+        centerOnPrimary(m_dialog);
         QMetaObject::invokeMethod(m_dialog, "show");
         m_dialog->requestActivate();
         if (QQuickItem *field = m_dialog->findChild<QQuickItem *>(QStringLiteral("keyField")))
             field->forceActiveFocus();
+        m_keyCapture->start(); // re-arm the Alt+Space hook for this session
         return;
     }
 
@@ -86,6 +118,16 @@ void HotkeyCaptureDialog::open(const QString &currentSequence)
     component.completeCreate();
 
     m_dialog = qobject_cast<QQuickWindow *>(dialogObj);
+    // The hook lives only while the dialog is visible: stop it as soon as
+    // the window hides (Cancel, OK, or close) so it never intercepts keys
+    // outside the capture flow.
+    connect(m_dialog, &QQuickWindow::visibleChanged, this,
+            [this](bool visible) {
+                if (!visible)
+                    m_keyCapture->stop();
+            });
+    centerOnPrimary(m_dialog);
+    m_keyCapture->start();
 }
 
 void HotkeyCaptureDialog::submitSequence(const QString &portable)

@@ -20,6 +20,7 @@ qt_add_library(wisp_core STATIC
     src/win/WinIconExtractor.cpp
     src/win/WinUwpLogo.cpp
     src/win/WinSingleInstance.cpp
+    src/win/WinKeyCapture.cpp
     src/core/HotkeyManager.cpp
     src/core/LauncherController.cpp
     src/core/FuzzyMatcher.cpp

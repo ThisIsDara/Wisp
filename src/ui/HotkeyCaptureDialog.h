@@ -6,6 +6,7 @@
 
 class QQmlEngine;
 class QQuickWindow;
+class WinKeyCapture;
 
 // Theme-driven hotkey capture (D-02.6): hosts the QML dialog, validates the
 // captured combo (F12 / modifier-only rejected), and emits the accepted
@@ -34,4 +35,5 @@ signals:
 private:
     QQmlEngine *m_engine;
     QPointer<QQuickWindow> m_dialog;
+    WinKeyCapture *m_keyCapture;
 };
