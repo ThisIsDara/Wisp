@@ -27,14 +27,6 @@ Opens and launches in under a second.
 
 <img src="assets/gifs/instant-launch.gif" width="640" alt="Instant launch demo">
 
-### Fuzzy search
-
-One ranked list over Start Menu apps, Store/UWP apps, and Windows
-Search-indexed files, with match highlighting. Installed apps appear on the
-empty query, no setup needed.
-
-<img src="assets/gifs/fuzzy-search.gif" width="640" alt="Fuzzy search demo">
-
 ### Favorites
 
 Star any result to pin it. The Favorites tab shows just the ones you picked,
@@ -42,12 +34,6 @@ and the launcher starts there when you have favorites.
 
 <img src="assets/gifs/favorites.gif" width="640" alt="Favorites demo">
 
-### Curate your list
-
-Hide entries you never use (`Ctrl+H`), reveal them again (`Ctrl+Shift+H`),
-or add any executable from the tray menu. Your list, your rules.
-
-<img src="assets/gifs/curate.gif" width="640" alt="Curation demo">
 
 ### Settings
 
@@ -63,9 +49,6 @@ dismisses as smoothly as it opens.
 
 <img src="assets/gifs/feel.gif" width="640" alt="Look and feel demo">
 
-## Screenshots
-
-*(Screenshots will be added here.)*
 
 ## Install
 
