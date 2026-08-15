@@ -97,10 +97,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $assets = "build\release-assets\wisp-setup.exe", "build\release-assets\SHA256SUMS"
-          $notes = "RELEASES\$($env:GITHUB_REF_NAME).md"
-          if (Test-Path $notes) {
-            gh release create "$env:GITHUB_REF_NAME" @assets --notes-file $notes
-          } else {
-            $body = "Install with wisp-setup.exe (per-user, no admin required).`n`nSee the README for usage, and THIRD-PARTY-NOTICES.txt for Qt LGPL notices."
-            gh release create "$env:GITHUB_REF_NAME" @assets --notes $body
-          }
+          $tag = "$env:GITHUB_REF_NAME"
+          $body = "Install with wisp-setup.exe (per-user, no admin required).`n`nSee the README for usage, and THIRD-PARTY-NOTICES.txt for Qt LGPL notices."
+          gh release create "$tag" @assets --title "wisp $tag" --notes $body
