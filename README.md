@@ -18,6 +18,51 @@ letters, pick a result, press Enter. Built with Qt 6 + QML + C++.
 wisp lives in the tray, opens instantly with a global hotkey, and launches
 apps, Store/UWP apps, and indexed files from one merged, ranked list.
 
+## Features
+
+### Instant launch
+
+Press `Alt+Space` anywhere and wisp is there. Type, press Enter, done.
+Opens and launches in under a second.
+
+<img src="assets/gifs/instant-launch.gif" width="640" alt="Instant launch demo">
+
+### Fuzzy search
+
+One ranked list over Start Menu apps, Store/UWP apps, and Windows
+Search-indexed files, with match highlighting. Installed apps appear on the
+empty query, no setup needed.
+
+<img src="assets/gifs/fuzzy-search.gif" width="640" alt="Fuzzy search demo">
+
+### Favorites
+
+Star any result to pin it. The Favorites tab shows just the ones you picked,
+and the launcher starts there when you have favorites.
+
+<img src="assets/gifs/favorites.gif" width="640" alt="Favorites demo">
+
+### Curate your list
+
+Hide entries you never use (`Ctrl+H`), reveal them again (`Ctrl+Shift+H`),
+or add any executable from the tray menu. Your list, your rules.
+
+<img src="assets/gifs/curate.gif" width="640" alt="Curation demo">
+
+### Settings
+
+Tray icon opens Settings: change the hotkey, pick an accent color, choose
+scan folders, and toggle per-user autostart.
+
+<img src="assets/gifs/settings.gif" width="640" alt="Settings demo">
+
+### Look and feel
+
+Acrylic backdrop and 60fps animations. A small, centered launcher that
+dismisses as smoothly as it opens.
+
+<img src="assets/gifs/feel.gif" width="640" alt="Look and feel demo">
+
 ## Screenshots
 
 *(Screenshots will be added here.)*
