@@ -5,7 +5,6 @@
 <p align="center">
   <a href="https://github.com/ThisIsDara/Wisp/releases/latest"><img src="https://img.shields.io/github/v/release/ThisIsDara/Wisp" alt="Latest release"></a>
   <a href="https://github.com/ThisIsDara/Wisp/releases"><img src="https://img.shields.io/github/downloads/ThisIsDara/Wisp/total" alt="Total downloads"></a>
-  <a href="https://github.com/ThisIsDara/Wisp/releases/latest"><img src="https://img.shields.io/github/downloads/ThisIsDara/Wisp/latest/total" alt="Latest release downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
   <a href="https://github.com/ThisIsDara"><img src="https://img.shields.io/badge/profile-ThisIsDara-blue?style=flat" alt="Profile: ThisIsDara"></a>
 </p>
