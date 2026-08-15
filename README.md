@@ -13,10 +13,10 @@
 # wisp
 
 An instant app launcher for Windows 10/11. Press `Alt+Space`, type a few
-letters, pick a result, press Enter. Built with Qt 6 + QML + C++.
+letters, pick a result, press Enter.
 
 wisp lives in the tray, opens instantly with a global hotkey, and launches
-apps, Store/UWP apps, and indexed files from one merged, ranked list.
+apps.
 
 ## Features
 
