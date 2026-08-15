@@ -83,7 +83,6 @@ jobs:
             $z = Get-ChildItem "build\signed" -Filter *.zip | Select-Object -First 1
             if ($z) { Expand-Archive -Path $z.FullName -DestinationPath $assets -Force }
           }
-          if (-not (Test-Path "$assets\wisp.exe")) { Copy-Item "build\deploy\wisp\wisp.exe" $assets }
           if (-not (Test-Path "$assets\wisp-setup.exe")) { Copy-Item "build\deploy\wisp-setup.exe" $assets }
           Get-ChildItem $assets -File | ForEach-Object {
             $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
@@ -97,10 +96,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $assets = "build\release-assets\wisp.exe", "build\release-assets\wisp-setup.exe", "build\release-assets\SHA256SUMS"
+          $assets = "build\release-assets\wisp-setup.exe", "build\release-assets\SHA256SUMS"
           $notes = "RELEASES\$($env:GITHUB_REF_NAME).md"
           if (Test-Path $notes) {
             gh release create "$env:GITHUB_REF_NAME" @assets --notes-file $notes
           } else {
-            gh release create "$env:GITHUB_REF_NAME" @assets --generate-notes
+            $body = "Install with wisp-setup.exe (per-user, no admin required).`n`nSee the README for usage, and THIRD-PARTY-NOTICES.txt for Qt LGPL notices."
+            gh release create "$env:GITHUB_REF_NAME" @assets --notes $body
           }
