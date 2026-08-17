@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>wisp — instant app launcher for Windows</title>
+<meta name="description" content="wisp is an instant app launcher for Windows 10/11. Press Alt+Space, type a few letters, press Enter.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='1' y='1' width='30' height='30' rx='6' fill='%23111111' stroke='%23FF7A00' stroke-width='2'/%3E%3Cpath d='M8 8h3v16H8zM13 11h3v13h-3zM18 8h3v16h-3z' fill='%23FF7A00'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav__inner">
+    <a class="nav__brand" href="#top">
+      <img class="nav__mark" src="assets/icons/wisp-01.png" alt="">
+      <span class="nav__name">wisp</span>
+    </a>
+    <nav class="nav__links" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#shortcuts">Shortcuts</a>
+    </nav>
+    <div class="nav__actions">
+      <a class="btn btn--primary btn--sm" href="https://github.com/ThisIsDara/Wisp/releases/latest">Download</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero">
+    <div class="hero__inner">
+      <div class="hero__brand reveal">
+        <img class="hero__icon" src="assets/icons/wisp-01.png" alt="wisp icon">
+        <span class="hero__brand-name">Wisp</span>
+      </div>
+      <div class="badge reveal">Free · open source · Windows 10/11</div>
+      <h1 class="hero__title reveal">The instant app launcher<br>for <span class="accent">Windows</span></h1>
+      <p class="hero__lede reveal">
+        Press <span class="key">Alt</span>+<span class="key">Space</span> anywhere — fullscreen games included —
+        type a few letters, hit Enter. wisp is gone before you finish thinking about it.
+      </p>
+      <div class="hero__cta reveal">
+        <a class="btn btn--primary" href="https://github.com/ThisIsDara/Wisp/releases/latest">
+          Download wisp-setup.exe
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 1v12M1 7l6 6 6-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a class="btn btn--ghost" href="https://github.com/ThisIsDara/Wisp">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+      <p class="hero__note reveal">per-user install · no admin · no telemetry</p>
+    </div>
+  </section>
+
+  <section class="shot reveal">
+    <div class="shot__frame">
+      <img src="assets/gifs/instant-launch.gif" alt="wisp opening instantly and launching an app">
+    </div>
+    <div class="shot__stats">
+      <div class="stat"><strong>1</strong><span>hotkey to open</span></div>
+      <div class="stat"><strong>60fps</strong><span>animations</span></div>
+      <div class="stat"><strong>0</strong><span>setup time</span></div>
+    </div>
+  </section>
+
+  <section class="openband" id="open-source">
+    <div class="openband__inner reveal">
+      <div class="openband__copy">
+        <h2 class="openband__title">Open source, GPLv3</h2>
+        <p class="openband__sub">Qt 6.11.1, C++, CMake, NSIS — the whole thing on GitHub.</p>
+      </div>
+      <div class="openband__actions">
+        <a class="btn btn--ghost" href="https://github.com/ThisIsDara/Wisp">View source on GitHub</a>
+        <a class="btn btn--ghost" href="https://github.com/ThisIsDara/Wisp/issues">Report a bug</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="section-head reveal">
+      <h2 class="section-title">Everything you need,<br>nothing you don't</h2>
+      <p class="section-sub">Built around one motion: press, type, launch.</p>
+    </div>
+
+    <div class="feature-grid">
+      <article class="feature-card reveal">
+        <div class="feature-card__media">
+          <img src="assets/gifs/favorites.gif" alt="starring a result as a favorite in wisp" loading="lazy">
+        </div>
+        <h3 class="feature-card__title">Favorites</h3>
+        <p class="feature-card__text">Star any result to pin it. wisp opens on your Favorites tab — the stuff you actually use, one keypress away.</p>
+      </article>
+
+      <article class="feature-card reveal">
+        <div class="feature-card__media">
+          <img src="assets/gifs/settings.gif" alt="wisp settings window" loading="lazy">
+        </div>
+        <h3 class="feature-card__title">Settings</h3>
+        <p class="feature-card__text">Rebind the hotkey, pick an accent color, choose scan folders, and toggle per-user autostart.</p>
+      </article>
+
+      <article class="feature-card reveal">
+        <div class="feature-card__media">
+          <img src="assets/gifs/feel.gif" alt="wisp look and feel" loading="lazy">
+        </div>
+        <h3 class="feature-card__title">Look and feel</h3>
+        <p class="feature-card__text">Acrylic backdrop, neon outline, 60fps motion. It dismisses as smoothly as it opens.</p>
+      </article>
+
+      <article class="feature-card reveal">
+        <div class="feature-card__media feature-card__media--plain">
+          <div class="feature-card__list">
+            <div class="feature-card__list-row"><span class="key">Ctrl</span>+<span class="key">Enter</span><span class="feature-card__list-what">reveal in Explorer</span></div>
+            <div class="feature-card__list-row"><span class="key">Ctrl</span>+<span class="key">Shift</span>+<span class="key">Enter</span><span class="feature-card__list-what">launch elevated</span></div>
+            <div class="feature-card__list-row"><span class="key">Ctrl</span>+<span class="key">H</span><span class="feature-card__list-what">hide an entry</span></div>
+            <div class="feature-card__list-row"><span class="key">PgUp</span><span class="key">PgDn</span><span class="feature-card__list-what">jump 7 results</span></div>
+          </div>
+        </div>
+        <h3 class="feature-card__title">Keyboard-first</h3>
+        <p class="feature-card__text">The mouse is optional. Navigate, hide, and launch without leaving the keys.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="shortcuts" id="shortcuts">
+    <div class="section-head section-head--center reveal">
+      <h2 class="section-title">Keys, not clicks</h2>
+      <p class="section-sub">The few shortcuts you'll actually use.</p>
+    </div>
+
+    <div class="keymap reveal">
+      <div class="keymap__row"><span class="keymap__keys"><span class="key">Alt</span>+<span class="key">Space</span></span><span class="keymap__what">Open / close the launcher</span></div>
+      <div class="keymap__row"><span class="keymap__keys"><span class="key">Enter</span></span><span class="keymap__what">Launch the selected result</span></div>
+      <div class="keymap__row"><span class="keymap__keys"><span class="key">↑</span><span class="key">↓</span></span><span class="keymap__what">Navigate results</span></div>
+      <div class="keymap__row"><span class="keymap__keys"><span class="key">Home</span><span class="key">End</span></span><span class="keymap__what">Jump to first / last result</span></div>
+      <div class="keymap__row"><span class="keymap__keys"><span class="key">Ctrl</span>+<span class="key">Enter</span></span><span class="keymap__what">Reveal file in Explorer</span></div>
+      <div class="keymap__row"><span class="keymap__keys"><span class="key">Ctrl</span>+<span class="key">Shift</span>+<span class="key">Enter</span></span><span class="keymap__what">Launch elevated (admin)</span></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot__inner">
+    <a class="foot__brand" href="#top">
+      <img class="nav__mark" src="assets/icons/wisp-01.png" alt="">
+      <span class="foot__name">wisp</span>
+    </a>
+    <ul class="foot__links">
+      <li><a href="https://github.com/ThisIsDara/Wisp/releases">Releases</a></li>
+      <li><a href="https://github.com/ThisIsDara/Wisp">Source</a></li>
+      <li><a href="https://github.com/ThisIsDara/Wisp/issues">Issues</a></li>
+      <li><a href="mailto:1380katana@gmail.com">Contact</a></li>
+    </ul>
+    <p class="foot__legal">GPLv3 · Qt under LGPLv3 — see THIRD-PARTY-NOTICES.txt in the repo</p>
+  </div>
+</footer>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
