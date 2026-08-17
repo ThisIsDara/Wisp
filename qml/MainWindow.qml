@@ -545,7 +545,7 @@ Window {
                     // 05.1: right-click → shell opens the in-window curation
                     // menu at the cursor (list-space coords from the
                     // delegate's mapToItem — no popup windows, no transforms).
-                    onContextMenuRequested: (index, isHidden, x, y) => ctxMenu.openMenu(index, isHidden, x, y)
+                    onContextMenuRequested: (index, isHidden, isFavorite, x, y) => ctxMenu.openMenu(index, isHidden, isFavorite, x, y)
                 }
                 // Selection truth stays in ResultsModel (moveSelection /
                 // selectIndex / hover). This binding makes ListView.isCurrentItem
@@ -745,11 +745,12 @@ Window {
                 // Right: "Show hidden (N)" (05.1) — visible whenever hidden
                 // entries exist (rule- AND user-hidden — the discoverability
                 // surface for the whole feature). Toggling reveals dimmed rows
-                // for Unhide (CUR-03).
+                // for Unhide (CUR-03). Sits LEFT of the settings gear
+                // (2026-08-15) so the two right-side actions never overlap.
                 MouseArea {
                     id: showHiddenArea
                     visible: resultsModel.hiddenCount > 0
-                    anchors.right: parent.right
+                    anchors.right: settingsGear.left
                     anchors.rightMargin: Theme.spaceLg
                     anchors.verticalCenter: parent.verticalCenter
                     width: showHiddenLabel.width
@@ -765,6 +766,34 @@ Window {
                         font.pixelSize: Theme.fontSizeTitle
                         font.weight: Theme.fontWeightRegular
                         color: showHiddenArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                    }
+                }
+
+                // Right: settings gear (2026-08-15) — the launcher-side
+                // affordance for the settings surface (previously tray-only,
+                // D-04). Small icon-only hit target in the footer row; opens
+                // settings via the controller seam (main.cpp wiring hides the
+                // launcher first, so the surface opens cleanly on top).
+                MouseArea {
+                    id: settingsGear
+                    anchors.right: parent.right
+                    anchors.rightMargin: Theme.spaceLg
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Theme.rowHeight - Theme.spaceSm
+                    height: Theme.rowHeight - Theme.spaceSm
+                    hoverEnabled: true
+                    onClicked: launcherController.openSettings()
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Theme.chipRadius
+                        color: settingsGear.containsMouse ? Theme.chipBg : "transparent"
+                        Text {
+                            anchors.centerIn: parent
+                            text: "\uE713" // MDL2 "Settings" (gear)
+                            font.family: "Segoe MDL2 Assets"
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            color: settingsGear.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                        }
                     }
                 }
             }
@@ -788,13 +817,15 @@ Window {
                 id: ctxMenu
                 property int targetIndex: -1
                 property bool targetIsHidden: false
+                property bool targetIsFavorite: false
                 visible: false
                 width: Theme.menuWidth
-                height: Theme.menuItemHeight + Theme.spaceXs * 2
+                height: Theme.menuItemHeight * 2 + Theme.spaceXs * 2
                 z: Theme.menuZ
-                function openMenu(index, isHidden, x, y) {
+                function openMenu(index, isHidden, isFavorite, x, y) {
                     targetIndex = index
                     targetIsHidden = isHidden
+                    targetIsFavorite = isFavorite
                     // x/y arrive in resultsView space (delegate mapToItem);
                     // translate into shell space (this overlay is a sibling
                     // of the list), then clamp so the menu never hangs off
@@ -820,34 +851,76 @@ Window {
                         onClicked: ctxMenu.closeMenu()
                     }
                 }
-                Rectangle {
+                Column {
                     anchors.fill: parent
                     anchors.margins: Theme.spaceXs
-                    radius: Theme.menuRadius - Theme.spaceXs
-                    color: ctxItem.containsMouse ? Theme.hoverBg : "transparent"
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: Theme.spaceMd
-                        anchors.right: parent.right
-                        anchors.rightMargin: Theme.spaceSm
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: ctxMenu.targetIsHidden ? "Unhide" : "Hide"
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeMenu
-                        font.weight: Theme.fontWeightRegular
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
+                    spacing: 0
+
+                    // Item 1: favorite toggle (2026-08-15) — same machinery as
+                    // the hover star, discoverable here without hover.
+                    Rectangle {
+                        width: parent.width
+                        height: Theme.menuItemHeight
+                        radius: Theme.menuRadius - Theme.spaceXs
+                        color: ctxFavItem.containsMouse ? Theme.hoverBg : "transparent"
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: Theme.spaceMd
+                            anchors.right: parent.right
+                            anchors.rightMargin: Theme.spaceSm
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: ctxMenu.targetIsFavorite ? "Remove from favorites" : "Add to favorites"
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeMenu
+                            font.weight: Theme.fontWeightRegular
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+                        MouseArea {
+                            id: ctxFavItem
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                ctxMenu.closeMenu()
+                                resultsModel.selectIndex(ctxMenu.targetIndex)
+                                if (ctxMenu.targetIsFavorite)
+                                    resultsModel.unfavoriteSelected()
+                                else
+                                    resultsModel.favoriteSelected()
+                            }
+                        }
                     }
-                    MouseArea {
-                        id: ctxItem
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onClicked: {
-                            ctxMenu.closeMenu()
-                            if (ctxMenu.targetIsHidden)
-                                resultsModel.unhideSelected()
-                            else
-                                resultsModel.hideSelected()
+
+                    // Item 2: hide/unhide.
+                    Rectangle {
+                        width: parent.width
+                        height: Theme.menuItemHeight
+                        radius: Theme.menuRadius - Theme.spaceXs
+                        color: ctxItem.containsMouse ? Theme.hoverBg : "transparent"
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: Theme.spaceMd
+                            anchors.right: parent.right
+                            anchors.rightMargin: Theme.spaceSm
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: ctxMenu.targetIsHidden ? "Unhide" : "Hide"
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeMenu
+                            font.weight: Theme.fontWeightRegular
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+                        MouseArea {
+                            id: ctxItem
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                ctxMenu.closeMenu()
+                                if (ctxMenu.targetIsHidden)
+                                    resultsModel.unhideSelected()
+                                else
+                                    resultsModel.hideSelected()
+                            }
                         }
                     }
                 }

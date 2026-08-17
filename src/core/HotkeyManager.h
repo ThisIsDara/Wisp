@@ -53,4 +53,5 @@ private:
     QKeySequence m_hotkey;
     QKeySequence m_preSuspendCombo;
     bool m_suspended = false;
+    bool m_started = false;   // start() guard — idempotent (2026-08-15 tray-retry)
 };

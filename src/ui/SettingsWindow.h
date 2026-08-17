@@ -98,6 +98,7 @@ protected:
 private:
     QQuickWindow *ensureWindow();              // lazy-load SettingsWindow.qml + inject
     void centerOnPrimary(QQuickWindow *win);   // UI-SPEC Geometry — every show
+    void hideWindow();                         // 2026-08-15: post-fade-out hide + visible=false
     void startGraceTimer();
     void onGraceTimeout();
     bool anotherOfOurWindowsIsActive() const;  // launcher / color dialog exemption
@@ -114,6 +115,7 @@ private:
     QPointer<QQuickWindow> m_colorDialog;
     QTimer *m_graceTimer;
     QPropertyAnimation *m_fade;
+    QPropertyAnimation *m_closeFade; // 2026-08-15: close fade-out (hideWindow on finished)
     // Open-race guard: the click-away grace arms only AFTER the first
     // activation. A deactivation before that (tray-menu close / focus
     // handoff racing the show) would otherwise close a freshly opened

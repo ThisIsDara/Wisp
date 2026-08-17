@@ -131,8 +131,8 @@ void ShellTest::settingsWindowContract()
     QCOMPARE(settingsWin->property("currentHotkey").toString(), hotkeys.hotkey().toString());
 
     settings.close();
-    QTest::qWait(50);
-    QVERIFY2(!settingsWin->isVisible(), "settings window must hide on close()");
+    QTest::qWait(250); // 120ms close fade-out (Theme.animFade) + margin
+    QVERIFY2(!settingsWin->isVisible(), "settings window must hide after the close fade");
 
     // CR-01: the hotkey row calls openHotkeyCapture → the capture dialog shows.
     // Invoke the QML-SIDE function (the bridge: QML → injected controller →

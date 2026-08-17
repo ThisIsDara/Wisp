@@ -104,6 +104,11 @@ HotkeyManager::~HotkeyManager()
 
 bool HotkeyManager::start()
 {
+    // Idempotent (2026-08-15): the boot tray-retry in main.cpp may call
+    // start() again once the tray appears — a second registration would
+    // double-register the combo AND double-connect the trigger signal.
+    if (m_started)
+        return true;
     if (sequenceInvalid(m_hotkey)) {
         emit registrationFailed(m_hotkey.toString());
         return false;
@@ -115,6 +120,7 @@ bool HotkeyManager::start()
         emit registrationFailed(m_hotkey.toString());
         return false;
     }
+    m_started = true;
 
     connect(m_winHotkey, &WinHotkey::hotkeyTriggered, this,
             [this](quint32 id) { if (id == kHotkeyId) emit hotkeyPressed(); });

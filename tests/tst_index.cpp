@@ -15,7 +15,7 @@
 // memo (unchanged subtree → zero list calls), per-dir mtime deltas (added /
 // removed / renamed), subtree sweeps on dir deletion, failure tolerance
 // (ok=false → old data kept, failedListings counted), the D-06 skip list and
-// D-02 .exe+folders filter through the walker, cap-100 prefilter, and a
+// D-02 .exe+.lnk+folders filter through the walker, cap-100 prefilter, and a
 // cross-thread smoke test (walkAndDelta + queryCandidates under the mutex).
 class TstIndex : public QObject
 {
@@ -77,7 +77,8 @@ void TstIndex::initialWalkIndexesExesAndFolders()
 {
     const QString root = QStringLiteral("C:\\root");
     auto map = QHash<QString, WinDirectoryWalk::WinDirListing>{
-        {root, listing({entry(QStringLiteral("app.exe"), false, 10), entry(QStringLiteral("sub"), true, 21)},
+        {root, listing({entry(QStringLiteral("app.exe"), false, 10), entry(QStringLiteral("sub"), true, 21),
+                        entry(QStringLiteral("game.lnk"), false, 12)},
                        5)},
         {root + QStringLiteral("\\sub"),
          listing({entry(QStringLiteral("tool.exe"), false, 30), entry(QStringLiteral("lib.dll"), false, 31)},
@@ -91,15 +92,21 @@ void TstIndex::initialWalkIndexesExesAndFolders()
     const auto outcome = index.walkAndDelta(QStringList{root}, listFn);
     QCOMPARE(outcome.failedListings, 0);
     QCOMPARE(outcome.dirsListed, 2);
-    QCOMPARE(outcome.added.size(), 3); // app.exe + sub + sub\tool.exe
+    QCOMPARE(outcome.added.size(), 4); // app.exe + game.lnk + sub + sub\tool.exe
 
     index.apply(outcome);
-    QCOMPARE(index.entryCount(), 3);
+    QCOMPARE(index.entryCount(), 4);
 
     const auto candidates = index.queryCandidates(QStringLiteral("tool"));
     QCOMPARE(candidates.size(), 1);
     QCOMPARE(candidates.at(0).path, root + QStringLiteral("\\sub\\tool.exe"));
     QVERIFY(!candidates.at(0).isFolder);
+
+    // 2026-08-15: .lnk shortcuts join the inventory (D-02 extension) —
+    // "game.lnk" is indexed and searchable like an .exe.
+    const auto lnk = index.queryCandidates(QStringLiteral("game"));
+    QCOMPARE(lnk.size(), 1);
+    QCOMPARE(lnk.at(0).path, root + QStringLiteral("\\game.lnk"));
 }
 
 void TstIndex::incrementalSkipsUnchangedSubtrees()
@@ -380,25 +387,28 @@ void TstIndex::wipeThenRescanRepopulates()
 
 void TstIndex::toEntriesStripsExe_20260815()
 {
-    // 2026-08-15: File-row titles drop the ".exe" extension — the default
-    // list shows "Wow", not "Wow.exe" (the user-facing title change). Only
-    // .exe is stripped, case-insensitively, from the basename; non-.exe names
-    // and folder rows keep their filename. targetPath is never touched.
+    // 2026-08-15: File-row titles drop the ".exe"/".lnk" extension — the
+    // default list shows "Wow", not "Wow.exe", and "Steam", not "Steam.lnk"
+    // (the user-facing title change). Only those two extensions are stripped,
+    // case-insensitively, from the basename; other names and folder rows keep
+    // their filename. targetPath is never touched.
     const QVector<FileIndex::IndexEntry> candidates = {
         { QStringLiteral("C:\\Games\\WoW.exe"), {}, false },
         { QStringLiteral("C:\\tools\\Tool.EXE"), {}, false },
+        { QStringLiteral("C:\\Games\\Steam.lnk"), {}, false },
         { QStringLiteral("C:\\docs\\report.pdf"), {}, false },
         { QStringLiteral("C:\\Games"), {}, true },
     };
     const QVector<AppEntry> out = FileIndex::toEntries(candidates, 10);
-    QCOMPARE(out.size(), 4);
+    QCOMPARE(out.size(), 5);
     QCOMPARE(out.at(0).displayName, QStringLiteral("WoW"));
     QCOMPARE(out.at(1).displayName, QStringLiteral("Tool"));   // case-insensitive
-    QCOMPARE(out.at(2).displayName, QStringLiteral("report.pdf")); // non-.exe kept
-    QCOMPARE(out.at(3).displayName, QStringLiteral("Games"));  // folder basename kept
+    QCOMPARE(out.at(2).displayName, QStringLiteral("Steam"));  // .lnk stripped too
+    QCOMPARE(out.at(3).displayName, QStringLiteral("report.pdf")); // non-.exe kept
+    QCOMPARE(out.at(4).displayName, QStringLiteral("Games"));  // folder basename kept
     QCOMPARE(out.at(0).source, AppEntry::Source::File);
     QCOMPARE(out.at(0).targetPath, QStringLiteral("C:\\Games\\WoW.exe")); // path intact
-    QCOMPARE(out.at(3).isFolder, true);
+    QCOMPARE(out.at(4).isFolder, true);
 }
 
 void TstIndex::concurrentReadsDuringWalk()

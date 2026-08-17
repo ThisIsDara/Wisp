@@ -55,6 +55,18 @@ void LauncherController::setScanFolderAdder(ScanFolderAdder fn)
     m_scanFolderAdder = std::move(fn);
 }
 
+void LauncherController::setSettingsOpener(SettingsOpener fn)
+{
+    m_settingsOpener = std::move(fn);
+}
+
+void LauncherController::openSettings()
+{
+    // No-op until main.cpp wires the seam (SettingsWindow::open).
+    if (m_settingsOpener)
+        m_settingsOpener();
+}
+
 void LauncherController::addScanRoot()
 {
     // No-op until main.cpp wires the seam (picker + store + scan) — a

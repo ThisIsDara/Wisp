@@ -178,6 +178,19 @@ Use these entry points:
 Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
 <!-- GSD:workflow-end -->
 
+<!-- IDEAS:start -->
+## Idea Vault (Obsidian)
+
+The user manages product ideas in the Obsidian vault at `E:\VPN-Vault\wisp\`. Check it for new/changed ideas at the START of every session (before planning or editing code) and reference them as context.
+
+- `wisp.md` — project home: roadmap, shipped list, links to version plans
+- `Ideas - Next Version.md` — free-form ideas for the next release
+- `v0.2.0.md`, `v0.3.0.md`, `v0.4.0.md` — per-version feature plans
+- `Fuzzy search.md`, `Favorites.md`, `Hotkey.md`, `Installer.md` — idea sub-notes
+
+The Obsidian MCP is configured in `~/.config/opencode/opencode.json` but may not load; reading the vault files directly always works.
+<!-- IDEAS:end -->
+
 
 
 <!-- GSD:profile-start -->

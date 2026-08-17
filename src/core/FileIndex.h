@@ -13,10 +13,11 @@
 #include "win/WinDirectoryWalk.h"
 
 // Scan index (07-01): the pure core-side store behind the self-managed file
-// scan. Holds .exe + folder entries (D-02), a per-directory mtime memo for
-// incremental re-walks (D-08), and persists to a SEPARATE binary file — never
-// the wisp INI (D-07). QML never binds this class directly; FileSearch /
-// ScanService / ResultsModel consume it (controller-owned policy).
+// scan. Holds .exe + .lnk + folder entries (D-02, .lnk added 2026-08-15), a
+// per-directory mtime memo for incremental re-walks (D-08), and persists to a
+// SEPARATE binary file — never the wisp INI (D-07). QML never binds this
+// class directly; FileSearch / ScanService / ResultsModel consume it
+// (controller-owned policy).
 //
 // Threading: m_entries + m_dirMtimes are guarded by m_mutex. walkAndDelta /
 // save are read-locked const methods (callable from a scan worker); apply /
@@ -89,12 +90,16 @@ private:
     QHash<QString, qint64> m_dirMtimes; // native-separator path → lastWriteMs
 
     static constexpr quint32 kMagic = 0x57535031; // ASCII "WSP1"
+    // Bumped to 3 (2026-08-15): .lnk files joined the inventory filter — a v2
+    // memo could skip re-listing cached folders, so old entries would never
+    // gain their shortcuts. load() rejects the v2 file and the first scan
+    // re-walks from scratch, picking up every .lnk beside the .exe files.
     // Bumped to 2 (07-06): the v1 memo-replace fix (apply() now REPLACES the
     // memo instead of insert-accumulating) makes any v1 file with a
     // stale-memo/entries mismatch untrustworthy — load() rejects it and the
     // first scan re-walks from scratch. Persisted format is otherwise
     // unchanged.
-    static constexpr quint32 kFormatVersion = 2;
+    static constexpr quint32 kFormatVersion = 3;
     static constexpr int kCandidateCap = 1000; // research OQ5; raised 07-06 — the default list
                                              // IS the index now (executable launcher)
     static constexpr int kMaxDepth = 64;      // T-07-01 defense-in-depth

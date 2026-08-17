@@ -224,16 +224,7 @@ Item {
                 color: Theme.textPrimary      // unmatched segments (near-white on accent: 4.7:1, UI-SPEC)
             }
         }
-        Text {
-            width: parent.width
-            visible: model.subtitle !== ""
-            text: model.subtitle
-            font.pixelSize: Theme.fontSizeSubtitle
-            font.weight: Theme.fontWeightRegular
-            color: Theme.textSecondary
-            elide: Text.ElideRight
         }
-    }
 
     // 05.1: right-click curation request — the shell owns the actual menu
     // (in-window overlay in MainWindow.qml, concrete widgets). Coordinates
@@ -241,7 +232,7 @@ Item {
     // overlay without touching delegate transforms (delegates scale 1.04
     // when current — a delegate-scoped Popup landed wrong / never showed;
     // observed 2026-08-11).
-    signal contextMenuRequested(int index, bool isHidden, real x, real y)
+    signal contextMenuRequested(int index, bool isHidden, bool isFavorite, real x, real y)
 
     MouseArea {
         id: hoverArea
@@ -258,7 +249,7 @@ Item {
                 // shell to open the curation context menu (CUR-02/03).
                 resultsModel.selectIndex(model.index)
                 var p = row.mapToItem(row.ListView.view, mouse.x, mouse.y)
-                contextMenuRequested(model.index, model.isHidden, p.x, p.y)
+                contextMenuRequested(model.index, model.isHidden, model.isFavorite, p.x, p.y)
                 return
             }
             resultsModel.selectIndex(model.index) // visual sync — tick slides to the click

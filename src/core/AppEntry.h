@@ -11,17 +11,19 @@
 // monogram, opens in Explorer). arguments/aumid stay empty for File rows.
 
 // 2026-08-15: the display title for a File row — the filename WITHOUT the
-// ".exe" extension ("Wow.exe" → "Wow"). Used at the two File-row entry-build
-// sites (FileIndex::toEntries, LaunchHistory::appendEntry); never stored. Only
-// the .exe extension is stripped (case-insensitive) — non-executable files
-// keep their full filename (file search can return anything, but the
-// launcher's inventory is executables). Derived from the basename, never the
-// whole path.
+// ".exe"/".lnk" extension ("Wow.exe" → "Wow", "Steam.lnk" → "Steam"). Used at
+// the two File-row entry-build sites (FileIndex::toEntries,
+// LaunchHistory::appendEntry); never stored. Only those two extensions are
+// stripped (case-insensitive) — other files keep their full filename (file
+// search can return anything, but the launcher's inventory is executables +
+// shortcuts). Derived from the basename, never the whole path.
 inline QString fileEntryTitle(const QString &path)
 {
     const int slash = qMax(path.lastIndexOf(u'/'), path.lastIndexOf(u'\\'));
     QString name = path.mid(slash + 1);
-    if (name.size() > 4 && name.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive))
+    if (name.size() > 4
+        && (name.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive)
+            || name.endsWith(QStringLiteral(".lnk"), Qt::CaseInsensitive)))
         name.chop(4);
     return name;
 }

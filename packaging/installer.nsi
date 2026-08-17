@@ -14,22 +14,26 @@ InstallDir "$LocalAppData\Programs\wisp"
 Caption "wisp — app launcher"
 
 ; --- version metadata (SignPath artifact policy: product name/version) --
-VIProductVersion "0.1.0.0"
+VIProductVersion "0.1.2.0"
 VIAddVersionKey "ProductName" "wisp"
 VIAddVersionKey "FileDescription" "wisp — app launcher"
-VIAddVersionKey "FileVersion" "0.1.0"
-VIAddVersionKey "ProductVersion" "0.1.0"
+VIAddVersionKey "FileVersion" "0.1.2"
+VIAddVersionKey "ProductVersion" "0.1.2"
 VIAddVersionKey "CompanyName" "ThisIsDara"
 VIAddVersionKey "LegalCopyright" "© 2026 ThisIsDara"
 
 ; --- UI copy (locked by UI-SPEC) ----------------------------------
 !define MUI_WELCOMEPAGE_TEXT "This will install wisp — the app launcher for Windows.$\r$\n$\r$\nClick Next to continue."
 !define MUI_FINISHPAGE_TEXT "wisp has been installed. Use the wisp tray icon to open the launcher anytime."
+!define MUI_FINISHPAGE_RUN "$InstDir\wisp.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Run wisp now"
+!define MUI_FINISHPAGE_RUN_PARAMETERS "--autostart"   ; resident-hidden: launches into the tray
 !define MUI_ABORTWARNING
 
 ; --- pages --------------------------------------------------------
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_COMPONENTS   ; 2026-08-15: "Start with Windows" checkbox
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 
@@ -48,7 +52,8 @@ Function un.onInit
 FunctionEnd
 
 ; --- install ------------------------------------------------------
-Section "Install"
+Section "wisp" SecWisp
+  SectionIn RO   ; core payload — always installed
   SetOutPath "$InstDir"
   File /r "..\build\deploy\wisp\*"   ; wisp.exe, Qt DLLs, plugins, qml, qt.conf, NOTICES, vc_redist.x64.exe
   WriteUninstaller "$InstDir\Uninst.exe"
@@ -67,6 +72,14 @@ Section "Install"
   ${EndIf}
 SectionEnd
 
+; --- Start with Windows (2026-08-15) — optional, default ON --------
+; Writes the SAME HKCU Run value the in-app toggle uses (D-12 format:
+; "\"<exe>\" --autostart"). Unchecking during install leaves/removes it
+; per the user's choice — never silently forces autostart on anyone.
+Section "Start with Windows" SecAutostart
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "wisp" '"$InstDir\wisp.exe" --autostart'
+SectionEnd
+
 ; --- Start Menu shortcut ------------------------------------------
 Section "Start Menu shortcut"
   CreateShortcut /NoWorkingDir "$SMPrograms\wisp.lnk" "$InstDir\wisp.exe"
@@ -75,6 +88,19 @@ SectionEnd
 ; --- uninstall ----------------------------------------------------
 Section "Uninstall"
   Delete "$SMPrograms\wisp.lnk"
+  ; 2026-08-15: remove the autostart Run value (matches the in-app toggle;
+  ; only the value WE wrote is deleted — guard by the installed path).
+  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "wisp"
+  ${If} $0 == '"$InstDir\wisp.exe" --autostart'
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "wisp"
+  ${EndIf}
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\wisp"
   RMDir /r "$InstDir"
 SectionEnd
+
+; --- section descriptions (component page) ------------------------
+; NOTE: placed AFTER the section declarations — ${SecAutostart} must exist
+; when this macro expands (makensis warning otherwise).
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecAutostart} "Launch wisp automatically in the tray when you sign in to Windows."
+!insertmacro MUI_FUNCTION_DESCRIPTION_END

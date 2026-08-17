@@ -31,6 +31,7 @@
 #include <QElapsedTimer>
 #include <QFileDialog>
 #include <QThreadPool>
+#include <QTimer>
 
 #include "FrameTimeProbe.h"
 
@@ -276,7 +277,9 @@ int main(int argc, char *argv[])
     HotkeyCaptureDialog capture(&engine, &app);
     // SYS-03 (D-01/D-04): the settings surface controller — QML host for
     // SettingsWindow.qml + ColorDialog.qml via the shared engine; opened from
-    // the tray ONLY (no launcher affordance, D-04). All collaborators injected
+    // the tray AND the launcher footer-row gear (2026-08-15 user redesign —
+    // D-04's tray-only rule is overridden; the gear seam lives on
+    // LauncherController::setSettingsOpener). All collaborators injected
     // (06-03 contract); hotkey-capture handoff reopens the EXISTING dialog.
     SettingsWindow settingsWindow(&engine, &settingsStore, &autostart,
                                   &hotkeys, &capture, &scanService, &app);
@@ -303,71 +306,96 @@ int main(int argc, char *argv[])
         scanService.requestScan(); // D-09: scan starts the moment a root exists
     });
 
-    if (window && QSystemTrayIcon::isSystemTrayAvailable()) {
+    // 2026-08-15: the footer-row settings gear — previously tray-only (D-04),
+    // the user asked for an in-launcher affordance. Hide the launcher first so
+    // the settings surface opens cleanly on top (same feel as click-away).
+    controller.setSettingsOpener([&controller, &settingsWindow] {
+        controller.hideNow();
+        settingsWindow.open();
+    });
+
+    // ── Hotkey + tray wiring (2026-08-15 boot-race fix) ──
+    // The autostart Run key can launch wisp BEFORE Explorer's notification
+    // area exists (login): isSystemTrayAvailable() is false and the old code
+    // fell into the tray-less branch forever — the app ran INVISIBLY with no
+    // tray icon, which read as "autostart doesn't work". Now the tray wiring
+    // RETRIES every second until the tray appears (cap 60s), then arms it.
+
+    // Hotkey toggle + window deactivation: needed in BOTH branches — wire
+    // unconditionally, before any tray logic.
+    if (window) {
+        QObject::connect(&hotkeys, &HotkeyManager::hotkeyPressed,
+                         &controller, &LauncherController::toggle); // respects fullscreen guard
+        QObject::connect(window, &QQuickWindow::activeChanged, &controller,
+                         [window, &controller] {
+                             controller.onWindowActiveChanged(window->isActive());
+                         });
+    }
+
+    // Tray-less fallback: the window close becomes the reserved exit path.
+    // Disconnected once the tray arms (the tray owns exit then).
+    QMetaObject::Connection closeQuit;
+    if (window) {
+        closeQuit = QObject::connect(window, &QQuickWindow::closing, &app,
+                                     [] { QCoreApplication::quit(); });
+    }
+
+    const auto armTray = [&]() -> bool {
+        if (!QSystemTrayIcon::isSystemTrayAvailable())
+            return false;
         // ORDER IS LOAD-BEARING (HOTK-02 canonical scenario):
         //   1. tray.show() first — showMessage on a hidden tray is silently dropped
         //   2. connect(registrationFailed → notifyHotkeyConflict) BEFORE hotkeys.start()
         //   3. hotkeys.start() last
         tray.show();
-
         QObject::connect(&hotkeys, &HotkeyManager::registrationFailed,
                          &tray, &TrayIcon::notifyHotkeyConflict);
-
-        // Hotkey → toggle (respects the fullscreen guard via controller)
-        QObject::connect(&hotkeys, &HotkeyManager::hotkeyPressed,
-                         &controller, &LauncherController::toggle);
-        // Window deactivation → controller grace timer (D-02.4 click-away)
-        // QQuickWindow::activeChanged() is parameterless — adapter reads the
-        // resulting active state.
-        QObject::connect(window, &QQuickWindow::activeChanged, &controller,
-                         [window, &controller] {
-                             controller.onWindowActiveChanged(window->isActive());
-                         });
-        // Tray menu
         QObject::connect(&tray, &TrayIcon::openWisp,
-                         &controller, &LauncherController::showUserRequested); // explicit intent bypasses guard
-        QObject::connect(&tray, &TrayIcon::changeHotkeyRequested, &capture, [&capture, &hotkeys] {
-            // HOTK-04: release the global combo while capturing — otherwise our
-            // own RegisterHotKey(NULL,...) intercepts e.g. Alt+Space system-wide
-            // and the keystroke never reaches the QML capture field.
-            hotkeys.suspend();
-            capture.open(hotkeys.hotkey().toString());
-        });
+                         &controller, &LauncherController::showUserRequested);
+        QObject::connect(&tray, &TrayIcon::changeHotkeyRequested, &capture,
+                         [&capture, &hotkeys] {
+                             hotkeys.suspend();
+                             capture.open(hotkeys.hotkey().toString());
+                         });
         QObject::connect(&capture, &HotkeyCaptureDialog::accepted, &hotkeys,
                          [&hotkeys](const QString &seq) {
-                             hotkeys.setHotkey(QKeySequence(seq)); // re-register + persist (D-02.5/6)
-                             hotkeys.resume();                     // re-arm the (possibly new) combo
+                             hotkeys.setHotkey(QKeySequence(seq));
+                             hotkeys.resume();
                          });
         QObject::connect(&capture, &HotkeyCaptureDialog::cancelled, &hotkeys,
-                         [&hotkeys] {
-                             hotkeys.resume(); // restore the suspended combo
-                         });
-        // D-04: settings opens from the tray ONLY (no launcher affordance).
+                         [&hotkeys] { hotkeys.resume(); });
         QObject::connect(&tray, &TrayIcon::settingsRequested,
                          &settingsWindow, &SettingsWindow::open);
-        // UI-SPEC tray contract: live disc repaint on accent change (D-06 —
-        // persist-before-notify; the picker's accentChanged lands here).
         QObject::connect(&settingsStore, &SettingsStore::accentChanged, &tray,
                          [&tray](const QColor &c) { tray.setAccent(c); });
         QObject::connect(&tray, &TrayIcon::quitRequested, &app, &QCoreApplication::quit);
-
-        hotkeys.start(); // register the persisted combo (registrationFailed may fire here → notified above)
-    } else {
-        // Tray-less fallback (exotic systems): D-02.1 "quit only via tray"
-        // cannot hold without a tray — the window close becomes the reserved
-        // explicit exit path. Hotkey toggle still works.
-        if (window) {
-            QObject::connect(&hotkeys, &HotkeyManager::hotkeyPressed,
-                             &controller, &LauncherController::toggle);
-            QObject::connect(window, &QQuickWindow::activeChanged, &controller,
-                             [window, &controller] {
-                                 controller.onWindowActiveChanged(window->isActive());
-                             });
-            QObject::connect(window, &QQuickWindow::closing, &app,
-                             [] { QCoreApplication::quit(); }); // closing(QCloseEvent*) → no-arg quit
+        hotkeys.start(); // idempotent — safe when the retry re-arms later
+        if (window && closeQuit) {
+            QObject::disconnect(closeQuit); // tray owns the exit now
+            closeQuit = QMetaObject::Connection();
         }
-        qWarning() << "No system tray available — running tray-less; window close is the exit.";
+        return true;
+    };
+
+    if (armTray()) {
+        // Tray available right now — done.
+    } else {
+        // Boot race: Explorer's tray not up yet (autostart at login).
+        // Retry every 1s up to 60s; hotkeys still register meanwhile (the
+        // fallback above kept the window-close exit).
+        qWarning() << "System tray not available at boot — retrying...";
         hotkeys.start();
+        QTimer trayRetry;
+        trayRetry.setInterval(1000);
+        QObject::connect(&trayRetry, &QTimer::timeout, &app, [&] {
+            if (armTray()) {
+                trayRetry.stop();
+                qInfo() << "System tray armed after boot delay";
+            }
+        });
+        trayRetry.start();
+        // Note: retries are bounded by the app lifetime; isSystemTrayAvailable
+        // polls cheaply and armTray is a no-op once armed (timer stopped).
     }
 
     // Phase-7 pivot (07-06): no catalog worker — nothing builds a default list at

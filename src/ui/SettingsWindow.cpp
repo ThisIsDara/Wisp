@@ -77,6 +77,8 @@ void SettingsWindow::open()
     // UI-SPEC open sequence: center → fade-in (120ms) → requestActivate.
     centerOnPrimary(win);
     win->setOpacity(0.0);
+    if (m_closeFade)
+        m_closeFade->stop(); // re-open mid-close-fade: start fresh from 0
     win->show();
     if (m_fade)
         m_fade->start();
@@ -94,11 +96,24 @@ void SettingsWindow::close()
     m_hasBeenActive = false; // the next open re-arms the grace on ITS first activation
     if (m_fade)
         m_fade->stop();
-    if (m_window) {
-        m_window->setOpacity(1.0); // reset — the next open fades from 0 again
-        m_window->hide();          // instant — no close animation (UI-SPEC)
-        emit settingsVisibleChanged(false);
+    if (m_window && m_window->isVisible()) {
+        // 2026-08-15: fade-out on close — the mirror of the open fade (same
+        // 120ms token, Theme.animFade). Animate opacity → 0, then hide. The
+        // open fade is stopped first so the two animations never race.
+        if (m_closeFade)
+            m_closeFade->start();
+    } else {
+        hideWindow();
     }
+}
+
+void SettingsWindow::hideWindow()
+{
+    if (!m_window)
+        return;
+    m_window->setOpacity(1.0); // reset — the next open fades from 0 again
+    m_window->hide();
+    emit settingsVisibleChanged(false);
 }
 
 QString SettingsWindow::currentHotkey() const
@@ -333,6 +348,18 @@ QQuickWindow *SettingsWindow::ensureWindow()
     m_fade->setStartValue(0.0);
     m_fade->setEndValue(1.0);
     m_fade->setEasingCurve(QEasingCurve::Linear);
+
+    // 2026-08-15: 120ms fade-out on close (mirror of the open fade). The
+    // window hides on finished — the emission of settingsVisibleChanged
+    // happens there too (hideWindow), so the surface never reports visible
+    // while mid-fade.
+    m_closeFade = new QPropertyAnimation(m_window, "opacity", this);
+    m_closeFade->setDuration(kFadeMs);
+    m_closeFade->setStartValue(1.0);
+    m_closeFade->setEndValue(0.0);
+    m_closeFade->setEasingCurve(QEasingCurve::Linear);
+    connect(m_closeFade, &QPropertyAnimation::finished, this,
+            &SettingsWindow::hideWindow);
 
     return m_window;
 }

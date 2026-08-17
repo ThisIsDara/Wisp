@@ -98,5 +98,14 @@ jobs:
         run: |
           $assets = "build\release-assets\wisp-setup.exe", "build\release-assets\SHA256SUMS"
           $tag = "$env:GITHUB_REF_NAME"
-          $body = "Install with wisp-setup.exe (per-user, no admin required).`n`nSee the README for usage, and THIRD-PARTY-NOTICES.txt for Qt LGPL notices."
+          # Rich pre-written notes (same skeleton as the last 2 releases) live
+          # in RELEASES/<tag>.md; fall back to the short two-line body if the
+          # file is missing (2026-08-17: restored the override — e62fb31
+          # dropped it, leaving every release with the bare fallback).
+          $notesFile = "RELEASES\$tag.md"
+          if (Test-Path $notesFile) {
+            $body = Get-Content $notesFile -Raw
+          } else {
+            $body = "Install with wisp-setup.exe (per-user, no admin required).`n`nSee the README for usage, and THIRD-PARTY-NOTICES.txt for Qt LGPL notices."
+          }
           gh release create "$tag" @assets --title "wisp $tag" --notes $body

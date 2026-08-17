@@ -43,6 +43,15 @@ public:
     // QML entry point (MainWindow.qml empty state): pick a folder to scan.
     Q_INVOKABLE void addScanRoot();
 
+    // 2026-08-15: settings-opener seam — same pattern as setScanFolderAdder.
+    // The footer-row gear button calls openSettings(); main.cpp wires it to
+    // SettingsWindow::open (previously tray-only, D-04 — user redesign).
+    using SettingsOpener = std::function<void()>;
+    void setSettingsOpener(SettingsOpener fn);
+
+    // QML entry point (MainWindow.qml footer row): open the settings surface.
+    Q_INVOKABLE void openSettings();
+
     // True when the passive hotkey path may show: fullscreen content defers
     // (HOTK-04 / D-02.3). AcceptsNotifications and Other are showable.
     bool canShow() const;
@@ -83,5 +92,6 @@ private:
     QPointer<QQuickWindow> m_win;
     std::function<WinFullscreenGuard::State()> m_guard = &WinFullscreenGuard::currentState;
     ScanFolderAdder m_scanFolderAdder;
+    SettingsOpener m_settingsOpener;
     QTimer *m_graceTimer;
 };

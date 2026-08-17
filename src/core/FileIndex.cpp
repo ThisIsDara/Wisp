@@ -28,10 +28,13 @@ bool skipLeaf(const QString &name)
     return kSkipNames.contains(name.toCaseFolded());
 }
 
-// D-02: v1 indexes .exe executables + directories only.
-bool isExe(const QString &name)
+// D-02: v1 indexes .exe executables + .lnk shortcuts + directories only.
+// 2026-08-15: .lnk joined the inventory — shortcuts in indexed folders are
+// launchable via ShellExecuteEx's open verb (the shell resolves the target).
+bool isIndexableFile(const QString &name)
 {
-    return name.endsWith(QLatin1String(".exe"), Qt::CaseInsensitive);
+    return name.endsWith(QLatin1String(".exe"), Qt::CaseInsensitive)
+        || name.endsWith(QLatin1String(".lnk"), Qt::CaseInsensitive);
 }
 
 // %APPDATA%\TID\wisp\wisp-index.dat — same AppData base the wisp.ini uses,
@@ -170,7 +173,7 @@ void FileIndex::walkDir(const QString &dir, int depth, const WinDirectoryWalk::W
             outcome.dirsListed++;
             outcome.mtimes.insert(full, sub.lastWriteMs);
             walkDir(full, depth + 1, sub, outcome, snapshot, childrenByParent, isDirByPath, listFn);
-        } else if (isExe(entry.name)) {
+        } else if (isIndexableFile(entry.name)) {
             outcome.added.append(IndexEntry{full, matchKeyOf(full), false});
         }
     }
