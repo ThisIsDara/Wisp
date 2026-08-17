@@ -68,6 +68,7 @@ private slots:
     void favoriteSelectedPersists();
     void unfavoriteSelectedRemoves();
     void favoritesOnlyFilters();
+    void favoritesOverrideHidden();
     void fileRowsFavoriteable();
     void missingIdInert();
 };
@@ -188,6 +189,38 @@ void TstFavorites::favoritesOnlyFilters()
     // Back to All → both rows return.
     m.setFavoritesOnly(false);
     QCOMPARE(m.rowCount(), 2);
+}
+
+void TstFavorites::favoritesOverrideHidden()
+{
+    // 2026-08-17 regression (observed live): a row that is BOTH hidden
+    // (curationHidden) and favorited vanished from the Favorites tab — the
+    // empty-query build skipped hidden rows BEFORE filterFavorites ran, while
+    // search never skips hidden file rows, so the row showed when typed but
+    // never in Favorites. Rule: in Favorites mode, favorited rows are exempt
+    // from the hidden skip (the favorites set is a positive user marker).
+    ResultsModel m;
+    auto hiddenFav = lnkEntry(QStringLiteral("Beta"), QStringLiteral("C:\\apps\\B.exe"));
+    hiddenFav.hidden = true;
+    auto hiddenPlain = lnkEntry(QStringLiteral("Gamma"), QStringLiteral("C:\\apps\\G.exe"));
+    hiddenPlain.hidden = true;
+    m.setEntries({ lnkEntry(QStringLiteral("Alpha"), QStringLiteral("C:\\apps\\A.exe")),
+                   hiddenFav, hiddenPlain });
+    m.setFavoriteIds({ QStringLiteral("C:\\apps\\B.exe") });
+
+    // All tab: hidden rows stay hidden (CUR-03) — Alpha only.
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("Alpha"));
+
+    // Favorites tab: the hidden-but-favorited row appears; the hidden
+    // non-favorite stays excluded.
+    m.setFavoritesOnly(true);
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("Beta"));
+
+    // All tab: hidden skip restored (favorites mode off).
+    m.setFavoritesOnly(false);
+    QCOMPARE(m.rowCount(), 1);
 }
 
 void TstFavorites::fileRowsFavoriteable()

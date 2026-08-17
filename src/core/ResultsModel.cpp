@@ -126,14 +126,22 @@ void ResultsModel::buildAppOrder()
         QVector<int> appIdx; // visible app indices (canonical order)
         appIdx.reserve(m_entries.size());
         for (int i = 0; i < m_entries.size(); ++i) {
-            if (m_entries.at(i).hidden && !m_showHidden)
+            // 2026-08-17: in Favorites mode, hidden rows that ARE favorited
+            // stay in the pool — favorites are a positive user marker and the
+            // Favorites tab is the user's explicit list (a favorited-but-hidden
+            // row vanished from it while still showing in search; observed
+            // with Wow.exe, hidden via curation + starred). Non-favorite
+            // hidden rows keep the CUR-03 skip.
+            if (m_entries.at(i).hidden && !m_showHidden
+                && !(m_favoritesOnly && m_favoriteIds.contains(idOf(m_entries.at(i)))))
                 continue; // 05.1: hidden rows render only in show-hidden mode (CUR-03)
             appIdx.append(i);
         }
         QVector<int> addIdx; // m_addedEntries is kept sorted (setFileResults)
         addIdx.reserve(m_addedEntries.size());
         for (int i = 0; i < m_addedEntries.size(); ++i) {
-            if (m_addedEntries.at(i).hidden && !m_showHidden)
+            if (m_addedEntries.at(i).hidden && !m_showHidden
+                && !(m_favoritesOnly && m_favoriteIds.contains(idOf(m_addedEntries.at(i)))))
                 continue; // 2026-08-12: manual picks hide like apps (same CUR-03 skip)
             addIdx.append(i);
         }
@@ -162,7 +170,11 @@ void ResultsModel::buildAppOrder()
     QVector<QPair<Row, FuzzyMatcher::Result>> scored;
     for (int i = 0; i < m_entries.size(); ++i) {
         const FuzzyMatcher::Result r = FuzzyMatcher::score(m_query, m_entries.at(i).displayName);
-        if (m_entries.at(i).hidden && !m_showHidden)
+        // 2026-08-17: same Favorites-overrides-hidden rule as the empty-query
+        // branch above — a favorited-but-hidden row stays searchable in
+        // Favorites mode (search results are all-visible anyway, D-01).
+        if (m_entries.at(i).hidden && !m_showHidden
+            && !(m_favoritesOnly && m_favoriteIds.contains(idOf(m_entries.at(i)))))
             continue; // 05.1: same skip as the empty-query loop (CUR-03)
         if (r.score > 0)
             scored.append({ Row{ i, false }, r });

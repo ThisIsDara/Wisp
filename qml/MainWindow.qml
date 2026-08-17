@@ -641,7 +641,14 @@ Window {
                     // pinned it to the full track — "a big scrollbar that
                     // never moves"; the control positions/sizes it from
                     // position+size itself, Basic-style).
-                    padding: Theme.scrollbarInset
+                    // 2026-08-17 fix: padding on ALL sides also inset the
+                    // thumb VERTICALLY (top/bottom), so at position 0 it
+                    // stopped 2px short of the track's top. Inset only the
+                    // right edge — the thumb travels the full track.
+                    leftPadding: 0
+                    topPadding: 0
+                    bottomPadding: 0
+                    rightPadding: Theme.scrollbarInset
                     visible: vbar.size < 1.0 && (vbar.active || vbar.hovered || resultsView.hovered)
                     opacity: visible ? 1.0 : 0.0
                     Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
