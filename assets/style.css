@@ -292,16 +292,40 @@ a { color: inherit; }
 
 .feature-card__media--plain { padding: 20px 16px; }
 
-.feature-card__swatches {
-  display: grid;
-  grid-template-columns: repeat(9, 1fr);
-  gap: 8px;
+.feature-card__launch { display: flex; flex-direction: column; gap: 10px; }
+
+.feature-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: default;
+  transition: border-color 140ms ease;
 }
 
-.swatch {
-  aspect-ratio: 1;
-  border-radius: 6px;
+.feature-btn:hover { border-color: var(--accent); }
+
+.feature-btn__key {
+  order: 2;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 5px;
   border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .feature-card__title { margin-top: 16px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
