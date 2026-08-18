@@ -27,8 +27,8 @@ const WISP_SVG = `
   <g class="wisp__orbit wisp__orbit--3"><circle cx="50" cy="46" r="1.5" fill="#fff6d1"/></g>
 
   <g class="wisp__body">
-    <ellipse class="wisp__glow" cx="32" cy="32" rx="20" ry="20" fill="#ffc98a"/>
-    <circle cx="32" cy="32" r="10" fill="url(#wispBody)"/>
+    <ellipse class="wisp__glow" cx="32" cy="32" rx="18" ry="18" fill="#ffedc0"/>
+    <circle cx="32" cy="32" r="7" fill="url(#wispBody)"/>
   </g>
 </svg>`;
 
@@ -38,15 +38,18 @@ const WISP_SVG = `
   const wisp = document.createElement("div");
   wisp.className = "wisp";
   wisp.innerHTML = WISP_SVG;
-  document.body.appendChild(wisp);
+  const zone = document.querySelector(".features");
+  zone.appendChild(wisp);
 
-  const MIN_TOP = 12, MAX_TOP = 72;   // % of viewport height
+  const MIN_TOP = 15, MAX_TOP = 65;  // % of section height
   const MIN_DUR = 9, MAX_DUR = 14;    // seconds per flight
   const FIRST_DELAY = 3000;           // first flight shortly after load
   const MIN_GAP = 15000, MAX_GAP = 40000; // gap between flights
 
   function fly() {
     if (document.hidden) return;
+    const rect = zone.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) return;
     const left = Math.random() < 0.5;
     wisp.classList.remove("wisp--l", "wisp--r");
     void wisp.offsetWidth; // restart animations

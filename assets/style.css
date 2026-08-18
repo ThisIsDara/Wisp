@@ -396,13 +396,16 @@ a { color: inherit; }
 
 /* ---------- wisp easter egg ---------- */
 
+.features { position: relative; }
+
 .wisp {
-  position: fixed;
+  position: absolute;
   z-index: -1;
   width: 44px;
   height: 44px;
   pointer-events: none;
   left: -80px;
+  top: 15%;
   opacity: 0;
   will-change: transform;
 }
@@ -424,7 +427,7 @@ a { color: inherit; }
   0%   { left: -80px; opacity: 0; }
   8%   { opacity: 1; }
   90%  { opacity: 1; }
-  100% { left: calc(100vw + 80px); opacity: 0; }
+  100% { left: calc(100% + 80px); opacity: 0; }
 }
 
 /* travel: right to left (flipped sprite) */
@@ -437,7 +440,7 @@ a { color: inherit; }
 }
 
 @keyframes wisp-travel-r {
-  0%   { left: calc(100vw + 80px); opacity: 0; }
+  0%   { left: calc(100% + 80px); opacity: 0; }
   8%   { opacity: 1; }
   90%  { opacity: 1; }
   100% { left: -80px; opacity: 0; }
