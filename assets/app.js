@@ -22,13 +22,13 @@ const WISP_SVG = `
     </radialGradient>
   </defs>
 
-  <g class="wisp__orbit wisp__orbit--1"><circle cx="46" cy="18" r="2.6" fill="#ffd28a"/></g>
-  <g class="wisp__orbit wisp__orbit--2"><circle cx="18" cy="46" r="2" fill="#ffb347"/></g>
-  <g class="wisp__orbit wisp__orbit--3"><circle cx="50" cy="46" r="1.6" fill="#ffd28a"/></g>
+  <g class="wisp__orbit wisp__orbit--1"><circle cx="46" cy="18" r="2.4" fill="#fff3c4"/></g>
+  <g class="wisp__orbit wisp__orbit--2"><circle cx="18" cy="46" r="1.9" fill="#ffe9a0"/></g>
+  <g class="wisp__orbit wisp__orbit--3"><circle cx="50" cy="46" r="1.5" fill="#fff6d1"/></g>
 
   <g class="wisp__body">
-    <ellipse class="wisp__glow" cx="32" cy="32" rx="22" ry="22" fill="#ff7a00" opacity="0.35"/>
-    <circle cx="32" cy="32" r="15" fill="url(#wispBody)"/>
+    <ellipse class="wisp__glow" cx="32" cy="32" rx="20" ry="20" fill="#ffc98a"/>
+    <circle cx="32" cy="32" r="10" fill="url(#wispBody)"/>
   </g>
 </svg>`;
 
@@ -41,7 +41,7 @@ const WISP_SVG = `
   document.body.appendChild(wisp);
 
   const MIN_TOP = 12, MAX_TOP = 72;   // % of viewport height
-  const MIN_DUR = 5, MAX_DUR = 9;     // seconds per flight
+  const MIN_DUR = 9, MAX_DUR = 14;    // seconds per flight
   const FIRST_DELAY = 3000;           // first flight shortly after load
   const MIN_GAP = 15000, MAX_GAP = 40000; // gap between flights
 

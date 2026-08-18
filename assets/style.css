@@ -398,9 +398,9 @@ a { color: inherit; }
 
 .wisp {
   position: fixed;
-  z-index: 60;
-  width: 72px;
-  height: 72px;
+  z-index: -1;
+  width: 44px;
+  height: 44px;
   pointer-events: none;
   left: -80px;
   opacity: 0;
@@ -445,22 +445,22 @@ a { color: inherit; }
 
 /* floaty bobbing while travelling */
 .wisp__body {
-  animation: wisp-bob 1s ease-in-out infinite alternate;
+  animation: wisp-bob 1.4s ease-in-out infinite alternate;
 }
 
 @keyframes wisp-bob {
-  from { transform: translateY(-8px); }
-  to   { transform: translateY(8px); }
+  from { transform: translateY(-6px); }
+  to   { transform: translateY(6px); }
 }
 
-/* small translucent glow around the orb */
+/* soft translucent glow around the orb */
 .wisp__glow {
   animation: wisp-glow 2s ease-in-out infinite alternate;
 }
 
 @keyframes wisp-glow {
-  from { opacity: 0.25; }
-  to   { opacity: 0.55; }
+  from { opacity: 0.1; }
+  to   { opacity: 0.25; }
 }
 
 /* particles circling the wisp */
@@ -470,17 +470,17 @@ a { color: inherit; }
   animation: wisp-orbit linear infinite;
 }
 
-.wisp__orbit--1 { animation-duration: 3.2s; }
+.wisp__orbit--1 { animation-duration: 5s; }
 
 .wisp__orbit--2 {
-  animation-duration: 4.4s;
+  animation-duration: 6.5s;
   animation-direction: reverse;
-  animation-delay: -2.2s;
+  animation-delay: -3.2s;
 }
 
 .wisp__orbit--3 {
-  animation-duration: 5.6s;
-  animation-delay: -1.4s;
+  animation-duration: 8.5s;
+  animation-delay: -2s;
 }
 
 @keyframes wisp-orbit {
