@@ -292,26 +292,17 @@ a { color: inherit; }
 
 .feature-card__media--plain { padding: 20px 16px; }
 
-.feature-card__stats {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.feature-card__swatches {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 8px;
 }
 
-.feature-card__stat {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
+.swatch {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
 }
-
-.feature-card__stat:last-child { border-bottom: none; }
-
-.feature-card__stat strong { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
-
-.feature-card__stat span { color: var(--text-2); font-size: 13.5px; }
 
 .feature-card__title { margin-top: 16px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 
