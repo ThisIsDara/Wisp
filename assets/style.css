@@ -394,6 +394,126 @@ a { color: inherit; }
 .feature-grid .reveal:nth-child(3) { transition-delay: 120ms; }
 .feature-grid .reveal:nth-child(4) { transition-delay: 180ms; }
 
+/* ---------- wisp easter egg ---------- */
+
+.wisp {
+  position: fixed;
+  z-index: 60;
+  width: 56px;
+  height: 56px;
+  pointer-events: none;
+  left: -80px;
+  opacity: 0;
+  will-change: transform;
+}
+
+.wisp svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* travel: left to right */
+.wisp--l {
+  animation-name: wisp-travel-l;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes wisp-travel-l {
+  0%   { left: -80px; opacity: 0; }
+  8%   { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { left: calc(100vw + 80px); opacity: 0; }
+}
+
+/* travel: right to left (flipped sprite) */
+.wisp--r svg { transform: scaleX(-1); }
+
+.wisp--r {
+  animation-name: wisp-travel-r;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes wisp-travel-r {
+  0%   { left: calc(100vw + 80px); opacity: 0; }
+  8%   { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { left: -80px; opacity: 0; }
+}
+
+/* floaty bobbing while travelling */
+.wisp__body {
+  animation: wisp-bob 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes wisp-bob {
+  from { transform: translateY(-6px) rotate(-5deg); }
+  to   { transform: translateY(6px) rotate(5deg); }
+}
+
+/* flame tail flicker */
+.wisp__tail {
+  transform-origin: 70% 50%;
+  animation: wisp-tail 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes wisp-tail {
+  from { transform: rotate(-8deg) scaleY(1); }
+  to   { transform: rotate(8deg) scaleY(1.12); }
+}
+
+/* wing flap */
+.wisp__wing-l, .wisp__wing-r {
+  transform-origin: 50% 20%;
+  animation: wisp-flap 0.28s ease-in-out infinite alternate;
+}
+
+.wisp__wing-r { animation-delay: 0.14s; }
+
+@keyframes wisp-flap {
+  from { transform: rotate(-32deg) scaleY(1); }
+  to   { transform: rotate(20deg) scaleY(0.75); }
+}
+
+/* glow pulse around the body */
+.wisp__glow {
+  animation: wisp-glow 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes wisp-glow {
+  from { opacity: 0.5; }
+  to   { opacity: 1; }
+}
+
+/* eyes blink */
+.wisp__eyes {
+  animation: wisp-blink 4.2s ease-in-out infinite;
+}
+
+@keyframes wisp-blink {
+  0%, 46%, 50%, 100% { transform: scaleY(1); }
+  48% { transform: scaleY(0.1); }
+}
+
+/* sparkle trail */
+.wisp__spark {
+  animation: wisp-spark 1.4s ease-in-out infinite;
+  opacity: 0;
+}
+
+.wisp__spark:nth-child(1) { animation-delay: 0s; }
+.wisp__spark:nth-child(2) { animation-delay: 0.35s; }
+.wisp__spark:nth-child(3) { animation-delay: 0.7s; }
+.wisp__spark:nth-child(4) { animation-delay: 1.05s; }
+
+@keyframes wisp-spark {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  40%  { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(-22px, 10px) scale(1); }
+}
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 640px) {
