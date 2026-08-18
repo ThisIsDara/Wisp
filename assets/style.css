@@ -293,26 +293,15 @@ a { color: inherit; }
 .feature-card__media--plain { padding: 20px 16px; }
 
 /* help card inside the feature grid */
-.help__logo { color: var(--text); display: block; margin-bottom: 12px; }
+.feature-card__help { text-align: center; }
 
-.feature-card__actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+.help__logo { color: var(--text); margin: 0 auto 16px; display: block; }
 
-.feature-card__btn {
-  display: block;
-  padding: 10px 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--text);
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 500;
-  text-decoration: none;
-  text-align: center;
-  transition: border-color 140ms ease, color 140ms ease;
-}
+.feature-card__help .feature-card__title { font-size: 22px; }
 
-.feature-card__btn:hover { border-color: var(--accent); color: var(--accent); }
+.feature-card__actions { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+
+.feature-card__btn { width: 100%; }
 
 .feature-card__title { margin-top: 16px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 
