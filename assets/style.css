@@ -309,24 +309,20 @@ a { color: inherit; }
   font-size: 14px;
   font-weight: 500;
   text-align: left;
-  cursor: default;
+  text-decoration: none;
   transition: border-color 140ms ease;
 }
 
 .feature-btn:hover { border-color: var(--accent); }
 
-.feature-btn__key {
-  order: 2;
+.feature-btn__arrow {
   flex-shrink: 0;
-  padding: 2px 7px;
-  border-radius: 5px;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
   color: var(--text-2);
-  font-family: var(--mono);
-  font-size: 11px;
-  white-space: nowrap;
+  font-size: 15px;
+  transition: transform 140ms ease, color 140ms ease;
 }
+
+.feature-btn:hover .feature-btn__arrow { transform: translateX(3px); color: var(--accent); }
 
 .feature-card__title { margin-top: 16px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 
