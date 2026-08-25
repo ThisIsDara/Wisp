@@ -740,7 +740,7 @@ Window {
                             }
                             Text {
                                 text: "wisp restarts itself to finish updates"
-                                visible: settingsController && settingsController.updatesAutoInstall()
+                                visible: settingsController && settingsController.updatesAutoInstall
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontSizeSubtitle
                                 font.weight: Theme.fontWeightRegular
@@ -753,14 +753,16 @@ Window {
                             width: Theme.toggleWidth
                             height: Theme.toggleHeight
                             radius: Theme.toggleTrackRadius
-                            color: settingsController && settingsController.updatesAutoInstall()
+                            // PROPERTY binding (no parens) - re-evaluates on
+                            // updatesAutoInstallChanged (05.1 lesson).
+                            color: settingsController && settingsController.updatesAutoInstall
                                    ? Theme.toggleTrackOn : Theme.toggleTrackOff
                             MouseArea {
                                 anchors.fill: parent
                                 onClicked: {
                                     if (settingsController)
                                         settingsController.setUpdatesAutoInstall(
-                                            !settingsController.updatesAutoInstall())
+                                            !settingsController.updatesAutoInstall)
                                 }
                             }
                             Rectangle {
@@ -769,28 +771,30 @@ Window {
                                 radius: Theme.knobRadius
                                 color: Theme.knobColor
                                 y: (parent.height - height) / 2
-                                x: settingsController && settingsController.updatesAutoInstall()
+                                x: settingsController && settingsController.updatesAutoInstall
                                    ? parent.width - width - 2 : 2
                                 Behavior on x { NumberAnimation { duration: Theme.animFade; easing: Easing.Linear } }
                             }
                         }
                     }
 
-                    // Check row — accent button (Scan-now clone) + inline
-                    // status; when an update is pending the status turns
-                    // bold textPrimary and a Download now button appears
-                    // (D-03 persistent surface).
+                    // Check row — accent button (Scan-now clone, but
+                    // content-sized: "Check for updates" outgrows the fixed
+                    // 84px Scan-now width) + reactive inline status; while an
+                    // update is pending the status turns bold textPrimary and
+                    // a Download now button appears (D-03).
                     Row {
                         width: parent.width
                         height: Theme.settingsRowScanItem
                         spacing: Theme.spaceSm
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 84
+                            width: checkLabel.implicitWidth + 24
                             height: Theme.settingsRowScanItem
                             radius: Theme.fieldRadius
                             color: checkBtn.containsMouse ? Theme.accentDark : Theme.accent
                             Text {
+                                id: checkLabel
                                 anchors.centerIn: parent
                                 text: "Check for updates"
                                 font.family: Theme.fontFamily
@@ -810,27 +814,30 @@ Window {
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 84 - Theme.spaceSm
-                              - (settingsController && settingsController.updateAvailable()
-                                 ? 84 + Theme.spaceSm : 0)
+                            width: parent.width - checkBtn.width - Theme.spaceSm
+                              - (settingsController && settingsController.updateAvailable
+                                 ? dlBtn.width + Theme.spaceSm : 0)
                             elide: Text.ElideMiddle
-                            text: settingsController ? settingsController.updateStatus()
+                            // PROPERTY binding (no parens) — refreshes on
+                            // updateStatusChanged from any engine transition.
+                            text: settingsController ? settingsController.updateStatus
                                                      : "Not checked yet"
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSizeSubtitle
-                            font.weight: settingsController && settingsController.updateAvailable()
+                            font.weight: settingsController && settingsController.updateAvailable
                                          ? Theme.fontWeightSemibold : Theme.fontWeightRegular
-                            color: settingsController && settingsController.updateAvailable()
+                            color: settingsController && settingsController.updateAvailable
                                    ? Theme.textPrimary : Theme.textSecondary
                         }
                         Rectangle {
-                            visible: settingsController && settingsController.updateAvailable()
+                            visible: settingsController && settingsController.updateAvailable
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 84
+                            width: dlLabel.implicitWidth + 24
                             height: Theme.settingsRowScanItem
                             radius: Theme.fieldRadius
                             color: dlBtn.containsMouse ? Theme.accentDark : Theme.accent
                             Text {
+                                id: dlLabel
                                 anchors.centerIn: parent
                                 text: "Download now"
                                 font.family: Theme.fontFamily

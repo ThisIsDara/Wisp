@@ -277,7 +277,8 @@ void SettingsWindow::setUpdatesAutoInstall(bool on)
     if (!m_settingsStore)
         return;
     m_settingsStore->setUpdatesAutoInstall(on);
-    emit updateStatusChanged(); // toggle sub-line re-evaluates too
+    emit updatesAutoInstallChanged(); // toggle track/knob + sub-line re-bind (05.1 lesson)
+    emit updateStatusChanged();
 }
 
 void SettingsWindow::checkForUpdatesNow()

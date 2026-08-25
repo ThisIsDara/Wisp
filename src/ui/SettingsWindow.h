@@ -39,6 +39,12 @@ class SettingsWindow : public QObject
     Q_PROPERTY(int scanIntervalMinutes READ scanIntervalMinutes NOTIFY scanIntervalChanged)
     Q_PROPERTY(QString lastScanSummary READ lastScanSummary NOTIFY lastScanSummaryChanged)
     Q_PROPERTY(bool scanning READ scanning NOTIFY lastScanSummaryChanged) // 2026-08-15: scan-in-progress → progress bar
+    // Phase 8 (reactive — 05.1 lesson: bindings never re-evaluate on plain
+    // method calls, so every value the QML binds MUST be a NOTIFY property).
+    Q_PROPERTY(bool updatesAutoInstall READ updatesAutoInstall
+               WRITE setUpdatesAutoInstall NOTIFY updatesAutoInstallChanged)
+    Q_PROPERTY(QString updateStatus READ updateStatus NOTIFY updateStatusChanged)
+    Q_PROPERTY(bool updateAvailable READ updateAvailable NOTIFY updateStatusChanged)
 
 public:
     // All collaborators are injected (no store reach-in, no service lookup):
@@ -101,6 +107,7 @@ signals:
     void scanIntervalChanged();
     void lastScanSummaryChanged();
     void updateStatusChanged();
+    void updatesAutoInstallChanged();
 
 protected:
     // Window-level Esc → close() (the QML surface has no key handler of its
