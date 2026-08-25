@@ -135,3 +135,23 @@ void TrayIcon::setUpdatePending(bool pending, const QString &version)
                                 : QStringLiteral("Download update"));
     m_updateAction->setVisible(pending); // D-03: visible only while pending
 }
+
+void TrayIcon::notifyUpdated(const QString &version)
+{
+    // D-14: informational only - no click action, kind stays None.
+    m_lastToastKind = ToastKind::None;
+    m_tray->showMessage(
+        QStringLiteral("wisp updated"),
+        QStringLiteral("wisp is now v%1.").arg(version),
+        QSystemTrayIcon::Information, 5000);
+}
+
+void TrayIcon::notifyUpdateFailed(const QString &version)
+{
+    // Auto path give-up notice (D-08 terminal copy). No click action.
+    m_lastToastKind = ToastKind::None;
+    m_tray->showMessage(
+        QStringLiteral("Update failed"),
+        QStringLiteral("Couldn't download v%1 - wisp will try again tomorrow.").arg(version),
+        QSystemTrayIcon::Warning, 5000);
+}

@@ -41,6 +41,7 @@ qt_add_library(wisp_core STATIC
     src/core/UpdateService.cpp
     src/ui/HotkeyCaptureDialog.cpp
     src/ui/SettingsWindow.cpp
+    src/ui/UpdateDialogs.cpp
 )
 target_include_directories(wisp_core PUBLIC src)
 target_link_libraries(wisp_core PUBLIC Qt6::Gui Qt6::Qml Qt6::Concurrent Qt6::Network)
@@ -83,6 +84,8 @@ qt_add_qml_module(wisp_qml
         qml/HotkeyCaptureDialog.qml
         qml/SettingsWindow.qml
         qml/ColorDialog.qml
+        qml/UpdatePrompt.qml
+        qml/UpdateProgress.qml
         qml/Theme.qml
     RESOURCES
         qml/assets/shadow.png

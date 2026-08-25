@@ -43,6 +43,9 @@ public:
     void notifyUpdateAvailable(const QString &version);
     // Persistent pending-update menu item visibility + label (D-03).
     void setUpdatePending(bool pending, const QString &version);
+    // Post-relaunch confirmation (D-14) and auto-path give-up notice (D-08).
+    void notifyUpdated(const QString &version);
+    void notifyUpdateFailed(const QString &version);
 
 signals:
     void openWisp();

@@ -143,6 +143,11 @@ readonly property int settingsSurfaceHeight: 628  // +100 Phase 8 Updates sectio
     // Phase 8 Updates section: header(18) + gap(12) + toggle row(28) + gap(8)
     // + check row(28) = 94 within 96 (declared on the 4-grid).
     readonly property int settingsRowUpdates: 96
+    // Phase 8 update dialogs (UI-SPEC S2/S3 geometry).
+    readonly property int updateDialogWidth: 320
+    readonly property int updateDialogHeight: 132
+    readonly property int updateProgressWidth: 280
+    readonly property int updateProgressHeight: 88
     // Autostart toggle (UI-SPEC Color interaction tokens)
     readonly property int toggleWidth: 40
     readonly property int toggleHeight: 20

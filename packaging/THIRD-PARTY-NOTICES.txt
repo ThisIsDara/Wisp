@@ -19,6 +19,7 @@ LGPL-COMPLIANCE.md).
 --------------------
 Qt Core
 Qt Gui
+Qt Network
 Qt Quick
 Qt QML
 

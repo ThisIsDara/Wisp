@@ -30,10 +30,14 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileDialog>
+#include <QProcess>
 #include <QThreadPool>
 #include <QTimer>
+#include <memory>
 
 #include "FrameTimeProbe.h"
+#include "core/UpdateService.h"
+#include "ui/UpdateDialogs.h"
 
 int main(int argc, char *argv[])
 {
@@ -88,6 +92,7 @@ int main(int argc, char *argv[])
     CurationStore curationStore;    // 05.1: UI-thread-only hide/show store (CUR-02)
     FavoritesStore favoritesStore;  // 2026-08-15: UI-thread-only favorites store (Favorites tab)
     AutostartManager autostart;     // 06-01: HKCU Run-key store (SYS-02, D-10/D-12)
+    UpdateService updates(QStringLiteral(WISP_VERSION)); // Phase 8 auto-updater (installed-build gated)
 
     // ── Phase-7 (07-04): local index + scan service — the D-01 backend swap ──
     QThreadPool scanPool;                       // D-08: dedicated scan pool — never the global
@@ -283,7 +288,7 @@ int main(int argc, char *argv[])
     // LauncherController::setSettingsOpener). All collaborators injected
     // (06-03 contract); hotkey-capture handoff reopens the EXISTING dialog.
     SettingsWindow settingsWindow(&engine, &settingsStore, &autostart,
-                                  &hotkeys, &capture, &scanService, nullptr, &app);
+                                  &hotkeys, &capture, &scanService, &updates, &app);
     // 07-05: QFileDialog lives in QtWidgets (wisp_core does not link it) —
     // the native folder picker is injected here (FileSearch::setAddExeDialog
     // precedent, main.cpp:124-127) and SHARED by both consumers below.
@@ -314,6 +319,65 @@ int main(int argc, char *argv[])
         controller.hideNow();
         settingsWindow.open();
     });
+
+    // ── Phase 8: update dialog host + flow wiring (CONTEXT D-01..D-14) ──
+    // dlSource discriminates manual (prompt) from auto (toggle-ON) downloads:
+    // failures toast on the silent auto path but render INLINE in Settings
+    // for the manual path (D-10). 0=none 1=manual 2=auto.
+    UpdateDialogs updateDialogs(&engine);
+    auto dlSource = std::make_shared<int>(0);
+
+    QObject::connect(&updates, &UpdateService::updateAvailable,
+                     [&](const QString &v) {
+                         tray.setUpdatePending(true, v);
+                         // D-05/D-06 zero-interaction: toggle ON = download and
+                         // install immediately whenever an update is found.
+                         if (settingsStore.updatesAutoInstall()) {
+                             *dlSource = 2;
+                             updateDialogs.showProgress(v);
+                             updates.downloadAndInstall();
+                         }
+                     });
+    QObject::connect(&updateDialogs, &UpdateDialogs::promptAccepted, [&] {
+        if (updates.state() != UpdateService::State::Available)
+            return;
+        *dlSource = 1; // manual path — failures stay inline (Settings status)
+        updateDialogs.showProgress(updates.availableVersion());
+        updates.downloadAndInstall();
+    });
+    // promptRejected ("Later"/Esc): deliberate no-op — tomorrow's daily check
+    // re-toasts while the old version persists (D-02).
+    QObject::connect(&updates, &UpdateService::downloadProgress,
+                     [&](qint64 received, qint64 total) {
+                         updateDialogs.setProgress(received, total);
+                         if (total > 0 && received >= total)
+                             updateDialogs.setVerifying();
+                     });
+    QObject::connect(&updates, &UpdateService::downloadVerified,
+                     [&](const QString &installerPath) {
+                         updateDialogs.closeProgress();
+                         const QString v = updates.availableVersion();
+                         { // one-shot "updated" marker consumed by the relaunched binary (D-14)
+                             QSettings ini(QSettings::IniFormat, QSettings::UserScope,
+                                           QStringLiteral("TID"), QStringLiteral("wisp"));
+                             ini.setValue(QStringLiteral("updates/pendingInstalledVersion"), v);
+                             ini.sync();
+                         }
+                         // T-08-07: argument-list form (no shell), path comes ONLY from
+                         // the hash-verified signal. Installer /S relaunches wisp.exe.
+                         QProcess::startDetached(installerPath, QStringList{QStringLiteral("/S")});
+                         QCoreApplication::quit(); // exe cannot overwrite itself while running
+                     });
+    QObject::connect(&updates, &UpdateService::downloadFailed,
+                     [&](const QString &reason) {
+                         updateDialogs.closeProgress();
+                         qWarning("UpdateService download failed: %s", qPrintable(reason));
+                         // D-08 terminal: toast on the silent auto path only;
+                         // the manual path's failure text lives in Settings (D-10).
+                         if (*dlSource == 2)
+                             tray.notifyUpdateFailed(updates.availableVersion());
+                         *dlSource = 0;
+                     });
 
     // ── Hotkey + tray wiring (2026-08-15 boot-race fix) ──
     // The autostart Run key can launch wisp BEFORE Explorer's notification
@@ -370,10 +434,44 @@ int main(int argc, char *argv[])
         QObject::connect(&settingsStore, &SettingsStore::accentChanged, &tray,
                          [&tray](const QColor &c) { tray.setAccent(c); });
         QObject::connect(&tray, &TrayIcon::quitRequested, &app, &QCoreApplication::quit);
+
+        // ── Phase 8: update toasts need an armed tray; wire them here too ──
+        QObject::connect(&tray, &TrayIcon::updateToastClicked, &updateDialogs, [&] {
+            if (updates.state() == UpdateService::State::Available)
+                updateDialogs.showPrompt(updates.availableVersion()); // D-01
+        });
+        QObject::connect(&tray, &TrayIcon::updateDownloadRequested, &updateDialogs, [&] {
+            if (updates.state() == UpdateService::State::Available)
+                updateDialogs.showPrompt(updates.availableVersion()); // D-03 menu item
+        });
+
         hotkeys.start(); // idempotent — safe when the retry re-arms later
         if (window && closeQuit) {
             QObject::disconnect(closeQuit); // tray owns the exit now
             closeQuit = QMetaObject::Connection();
+        }
+
+        // ── Phase 8 startup sequence (once — guarded by the static flag) ──
+        static bool updateChecksArmed = false;
+        if (!updateChecksArmed) {
+            updateChecksArmed = true;
+            { // D-14 one-shot "updated" marker: written by the OLD binary before
+              // it quit into the silent installer; consumed by THIS new binary.
+                QSettings ini(QSettings::IniFormat, QSettings::UserScope,
+                              QStringLiteral("TID"), QStringLiteral("wisp"));
+                const QString pending =
+                    ini.value(QStringLiteral("updates/pendingInstalledVersion")).toString();
+                if (!pending.isEmpty()) {
+                    ini.remove(QStringLiteral("updates/pendingInstalledVersion"));
+                    ini.sync();
+                    if (pending == QString::fromLatin1(WISP_VERSION))
+                        tray.notifyUpdated(pending);
+                }
+            }
+            // D-04: the daily check runs 30s after launch so its toast never
+            // lands in the login burst. Guarded once-a-day inside the service;
+            // toggle OFF only changes install behavior, not the check.
+            QTimer::singleShot(30000, &updates, [&updates] { updates.checkForUpdates(false); });
         }
         return true;
     };
