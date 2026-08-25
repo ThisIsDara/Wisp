@@ -107,9 +107,9 @@ QtObject {
     // Window + surface geometry (480x360 → 480x560 + scan section, 07-05;
     // surface = window − 2x16 shadow margin, same shell as the launcher).
 readonly property int settingsWindowWidth: 480
-readonly property int settingsWindowHeight: 688   // +128 Phase 8 Updates section (was 560)
+readonly property int settingsWindowHeight: 736   // +176 Phase 8 Updates section w/ bar+hint (was 560)
 readonly property int settingsSurfaceWidth: 448
-readonly property int settingsSurfaceHeight: 656  // +128 Phase 8 Updates section (was 528)
+readonly property int settingsSurfaceHeight: 704  // +176 Phase 8 Updates section w/ bar+hint (was 528)
     readonly property int colorDialogWindowWidth: 280
     readonly property int colorDialogWindowHeight: 320
     readonly property int colorDialogSurfaceWidth: 248
