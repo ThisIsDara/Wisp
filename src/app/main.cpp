@@ -56,7 +56,8 @@ int main(int argc, char *argv[])
 
     QCoreApplication::setOrganizationName("TID");
     QCoreApplication::setApplicationName("wisp");
-    QCoreApplication::setApplicationVersion("0.1.0");
+    // D-15 single version source: WISP_VERSION comes from CMake project(VERSION).
+    QCoreApplication::setApplicationVersion(QStringLiteral(WISP_VERSION));
 
     // D-02.1 resident: the window hides, the app lives. SINGLE home of this
     // flag (the QML side must never set it).

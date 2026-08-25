@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
-project(wisp VERSION 0.1.0 LANGUAGES CXX)
+project(wisp VERSION 0.1.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Qml Gui Core Test Widgets Concurrent)
+find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Qml Gui Core Test Widgets Concurrent Network)
 
 qt_standard_project_setup()
 qt_policy(SET QTP0001 NEW)   # module resources at :/qt/qml/<Module> — the import system's canonical location (deploy-safe)
@@ -38,11 +38,12 @@ qt_add_library(wisp_core STATIC
     src/core/CurationRules.cpp
     src/core/CurationStore.cpp
     src/core/FavoritesStore.cpp
+    src/core/UpdateService.cpp
     src/ui/HotkeyCaptureDialog.cpp
     src/ui/SettingsWindow.cpp
 )
 target_include_directories(wisp_core PUBLIC src)
-target_link_libraries(wisp_core PUBLIC Qt6::Gui Qt6::Qml Qt6::Concurrent)
+target_link_libraries(wisp_core PUBLIC Qt6::Gui Qt6::Qml Qt6::Concurrent Qt6::Network)
 target_link_libraries(wisp_core PRIVATE shell32 ole32 shlwapi Qt6::Quick)
 # windowsapp.lib: RoGetActivationFactory + RoOriginateLanguageException from
 # the C++/WinRT SDK projection (WinUwpEnumerator) — must be in the link line
@@ -65,6 +66,10 @@ qt_add_executable(wisp WIN32
     src/app/FrameTimeProbe.cpp
     src/tray/TrayIcon.cpp
 )
+
+# Single version source (D-15): About box + updater compare read WISP_VERSION.
+# packaging/installer.nsi VIProductVersion is bumped in lockstep at release time.
+target_compile_definitions(wisp PRIVATE WISP_VERSION="${PROJECT_VERSION}")
 
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
@@ -180,6 +185,10 @@ if(BUILD_TESTING)
     target_link_libraries(tst_favorites PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
     add_test(NAME tst_favorites COMMAND tst_favorites)
 
+    qt_add_executable(tst_updater tests/tst_updater.cpp)
+    target_link_libraries(tst_updater PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
+    add_test(NAME tst_updater COMMAND tst_updater)
+
     # Qt test binaries need the Qt DLLs (Qt6Testd.dll etc.) at run time; ctest
     # does not inherit build.ps1's PATH. Prepend Qt's bin dir (derived from
     # Qt6::Core's location — no hardcoded path) for every test so plain
@@ -190,7 +199,7 @@ if(BUILD_TESTING)
         tst_enum tst_catalog tst_launch tst_tray tst_filesearch
         tst_scan tst_index
         tst_history tst_icons tst_iconcache tst_settings tst_autostart
-        tst_curation tst_favorites
+        tst_curation tst_favorites tst_updater
         PROPERTIES ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
