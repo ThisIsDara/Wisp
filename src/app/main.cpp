@@ -283,7 +283,7 @@ int main(int argc, char *argv[])
     // LauncherController::setSettingsOpener). All collaborators injected
     // (06-03 contract); hotkey-capture handoff reopens the EXISTING dialog.
     SettingsWindow settingsWindow(&engine, &settingsStore, &autostart,
-                                  &hotkeys, &capture, &scanService, &app);
+                                  &hotkeys, &capture, &scanService, nullptr, &app);
     // 07-05: QFileDialog lives in QtWidgets (wisp_core does not link it) —
     // the native folder picker is injected here (FileSearch::setAddExeDialog
     // precedent, main.cpp:124-127) and SHARED by both consumers below.

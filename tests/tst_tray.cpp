@@ -29,24 +29,29 @@ void TstTray::menuActionsAndSignals()
     // object-parented to non-widgets); reached via the accessor.
     QMenu *menu = tray.menu();
     QVERIFY(menu);
-
     // Locked order (D-03): Open wisp / Settings / Change hotkey… / sep / Quit.
+    // / sep / Quit - Phase 8 inserts a HIDDEN pending-update entry between
+    // the locked top block and the separator (visible only when pending).
     const QStringList labels = { QStringLiteral("Open wisp"),
                                  QStringLiteral("Settings"),
                                  QStringLiteral("Change hotkey…"),
+                                 QStringLiteral("Download update"),
                                  QStringLiteral("Quit") };
     auto actions = menu->actions();
-    QCOMPARE(actions.size(), labels.size() + 1); // + separator between Change… and Quit
+    QCOMPARE(actions.size(), labels.size() + 1); // + separator before Quit
     QCOMPARE(actions.at(0)->text(), labels.at(0));
     QCOMPARE(actions.at(1)->text(), labels.at(1));
     QCOMPARE(actions.at(2)->text(), labels.at(2));
-    QVERIFY(actions.at(3)->isSeparator());
-    QCOMPARE(actions.at(4)->text(), labels.at(3));
+    QVERIFY(actions.at(3)->text().startsWith(QStringLiteral("Download update")));
+    QVERIFY(!actions.at(3)->isVisible());        // hidden until update pending (D-03)
+    QVERIFY(actions.at(4)->isSeparator());
+    QCOMPARE(actions.at(5)->text(), labels.at(4));
 
     // Signal wiring: each action triggers its TrayIcon signal.
     QSignalSpy openSpy(&tray, &TrayIcon::openWisp);
     QSignalSpy changeSpy(&tray, &TrayIcon::changeHotkeyRequested);
     QSignalSpy quitSpy(&tray, &TrayIcon::quitRequested);
+    QSignalSpy dlSpy(&tray, &TrayIcon::updateDownloadRequested);
 
     actions.at(0)->trigger();
     QCOMPARE(openSpy.count(), 1);
@@ -54,8 +59,16 @@ void TstTray::menuActionsAndSignals()
     actions.at(2)->trigger();
     QCOMPARE(changeSpy.count(), 1);
 
-    actions.at(4)->trigger();
+    actions.at(5)->trigger();
     QCOMPARE(quitSpy.count(), 1);
+
+    // setUpdatePending(true) reveals the item with the version label (D-03).
+    tray.setUpdatePending(true, QStringLiteral("0.1.3"));
+    QVERIFY(actions.at(3)->isVisible());
+    actions.at(3)->trigger();
+    QCOMPARE(dlSpy.count(), 1);
+    tray.setUpdatePending(false, QString());
+    QVERIFY(!actions.at(3)->isVisible());
 }
 
 void TstTray::settingsActionWired()
@@ -66,7 +79,7 @@ void TstTray::settingsActionWired()
     QMenu *menu = tray.menu();
     QVERIFY(menu);
     auto actions = menu->actions();
-    QCOMPARE(actions.size(), 5);
+    QCOMPARE(actions.size(), 6); // 4 actions + hidden update entry + separator
 
     // "Settings" sits between "Open wisp" and "Change hotkey…" and emits
     // settingsRequested when triggered.
@@ -97,12 +110,12 @@ void TstTray::accentSetterKeepsMenuIntact()
     QMenu *menu = tray.menu();
     QVERIFY(menu);
     auto actions = menu->actions();
-    QCOMPARE(actions.size(), 5);
+    QCOMPARE(actions.size(), 6); // 4 actions + hidden update entry + separator
     QCOMPARE(actions.at(1)->text(), QStringLiteral("Settings"));
 
     // Invalid accent is silently ignored (D-16) — no crash, menu intact.
     tray.setAccent(QColor());
-    QCOMPARE(tray.menu()->actions().size(), 5);
+    QCOMPARE(tray.menu()->actions().size(), 6);
 }
 
 void TstTray::conflictNotificationSmoke()

@@ -92,3 +92,15 @@ void SettingsStore::setScanIntervalMinutes(int minutes)
     m_settings.setValue(QStringLiteral("scan/intervalMinutes"), qBound(1, minutes, 1440));
     m_settings.sync();
 }
+
+bool SettingsStore::updatesAutoInstall() const
+{
+    // Silent fallback: missing/garbage -> OFF (default locked in discuss-phase).
+    return m_settings.value(QStringLiteral("updates/autoInstall"), false).toBool();
+}
+
+void SettingsStore::setUpdatesAutoInstall(bool on)
+{
+    m_settings.setValue(QStringLiteral("updates/autoInstall"), on);
+    m_settings.sync(); // LaunchHistory.cpp:48/58 discipline — sync after EVERY write
+}

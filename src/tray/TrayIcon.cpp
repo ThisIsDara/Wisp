@@ -58,12 +58,29 @@ TrayIcon::TrayIcon(QObject *parent)
     auto *changeAction = m_menu->addAction(QStringLiteral("Change hotkey…"));
     QObject::connect(changeAction, &QAction::triggered, this, &TrayIcon::changeHotkeyRequested);
 
+    // Phase 8 (UI-SPEC S4): persistent pending-update entry. Hidden until an
+    // update is pending (D-03); placed after the locked top block, before the
+    // separator, so the D-03 order contract above is untouched.
+    m_updateAction = m_menu->addAction(QStringLiteral("Download update"));
+    m_updateAction->setVisible(false);
+    QObject::connect(m_updateAction, &QAction::triggered, this,
+                     &TrayIcon::updateDownloadRequested);
+
     m_menu->addSeparator();
 
     auto *quitAction = m_menu->addAction(QStringLiteral("Quit"));
     QObject::connect(quitAction, &QAction::triggered, this, &TrayIcon::quitRequested);
 
     m_tray->setContextMenu(m_menu);
+
+    // Toast-click routing: only the update-available toast is actionable
+    // (opens the Download now / Later prompt in main.cpp). The conflict
+    // toast points at the menu instead.
+    QObject::connect(m_tray, &QSystemTrayIcon::messageClicked, this, [this] {
+        if (m_lastToastKind == ToastKind::UpdateAvailable)
+            emit updateToastClicked();
+        m_lastToastKind = ToastKind::None;
+    });
 }
 
 TrayIcon::~TrayIcon()
@@ -89,10 +106,32 @@ void TrayIcon::setAccent(const QColor &accent)
 
 void TrayIcon::notifyHotkeyConflict(const QString &combo)
 {
+    m_lastToastKind = ToastKind::HotkeyConflict;
     m_tray->showMessage(
         QStringLiteral("wisp — hotkey in use"),
         QStringLiteral("%1 is already registered by another application. "
                        "Use tray → Change hotkey… to pick a different one.")
             .arg(combo),
         QSystemTrayIcon::Warning, 5000);
+}
+
+void TrayIcon::notifyUpdateAvailable(const QString &version)
+{
+    // UI-SPEC S4 copy; Info icon (conflict stays Warning). The click routes
+    // through messageClicked -> updateToastClicked via the kind discriminator.
+    m_lastToastKind = ToastKind::UpdateAvailable;
+    m_tray->showMessage(
+        QStringLiteral("wisp update available"),
+        QStringLiteral("wisp v%1 is ready to install.").arg(version),
+        QSystemTrayIcon::Information, 5000);
+}
+
+void TrayIcon::setUpdatePending(bool pending, const QString &version)
+{
+    if (!m_updateAction)
+        return;
+    m_updateAction->setText(pending
+                                ? QStringLiteral("Download update v%1").arg(version)
+                                : QStringLiteral("Download update"));
+    m_updateAction->setVisible(pending); // D-03: visible only while pending
 }

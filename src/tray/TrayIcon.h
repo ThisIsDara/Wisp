@@ -37,14 +37,26 @@ public:
     // accents. Invalid colors are silently ignored (D-16).
     void setAccent(const QColor &accent);
 
+    // ── Phase 8 update surfaces (UI-SPEC S4) ──
+    // "Update available" toast; clicking it emits updateToastClicked()
+    // (main.cpp opens the Download now / Later prompt — D-01).
+    void notifyUpdateAvailable(const QString &version);
+    // Persistent pending-update menu item visibility + label (D-03).
+    void setUpdatePending(bool pending, const QString &version);
+
 signals:
     void openWisp();
     void settingsRequested();
     void changeHotkeyRequested();
     void quitRequested();
+    void updateToastClicked();      // messageClicked routed by toast kind
+    void updateDownloadRequested(); // tray menu item triggered
 
 private:
+    enum class ToastKind { None, HotkeyConflict, UpdateAvailable };
     QColor m_accent;   // default #0078D4 — disc fill (repainted on setAccent)
     QPointer<QSystemTrayIcon> m_tray;
     QPointer<QMenu> m_menu;
+    QAction *m_updateAction = nullptr;
+    ToastKind m_lastToastKind = ToastKind::None;
 };

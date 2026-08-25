@@ -16,6 +16,7 @@
 #include "core/HotkeyManager.h"
 #include "core/ScanService.h"
 #include "core/SettingsStore.h"
+#include "core/UpdateService.h"
 #include "ui/HotkeyCaptureDialog.h"
 
 namespace {
@@ -30,7 +31,7 @@ constexpr int kFadeMs = 120;
 SettingsWindow::SettingsWindow(QQmlEngine *engine, SettingsStore *settingsStore,
                                AutostartManager *autostart, HotkeyManager *hotkeys,
                                HotkeyCaptureDialog *capture, ScanService *scanService,
-                               QObject *parent)
+                               UpdateService *updates, QObject *parent)
     : QObject(parent)
     , m_engine(engine)
     , m_settingsStore(settingsStore)
@@ -38,6 +39,7 @@ SettingsWindow::SettingsWindow(QQmlEngine *engine, SettingsStore *settingsStore,
     , m_hotkeys(hotkeys)
     , m_capture(capture)
     , m_scanService(scanService)
+    , m_updates(updates)
 {
     // Hotkey-row handoff (D-03, success criterion 3): the EXISTING capture
     // dialog validates (F12/mod-only rejected) and surfaces conflicts via its
@@ -51,10 +53,17 @@ SettingsWindow::SettingsWindow(QQmlEngine *engine, SettingsStore *settingsStore,
             });
 
     // 07-05: the last-scan summary follows scans LIVE while the window is
-    // open — the QML binding stays fresh without polling.
+    // open - the QML binding stays fresh without polling.
     if (m_scanService) {
         connect(m_scanService, &ScanService::scanStateChanged, this,
                 [this] { emit lastScanSummaryChanged(); });
+    }
+
+    // Phase 8: every engine transition recomposes the inline status line
+    // (UI-SPEC S1 states; D-10 - failures are text here, never popups).
+    if (m_updates) {
+        connect(m_updates, &UpdateService::stateChanged, this,
+                [this] { emit updateStatusChanged(); });
     }
 
     m_graceTimer = new QTimer(this);
@@ -223,6 +232,74 @@ void SettingsWindow::scanNow()
 {
     if (m_scanService)
         m_scanService->requestScan(); // single-flight gate inside (07-03)
+}
+
+// ── Updates section (Phase 8, UI-SPEC S1) ─────────────────────────────
+
+QString SettingsWindow::updateStatus() const
+{
+    // Composed LIVE from engine state - the single source of the inline
+    // status text (D-10). Copy per UI-SPEC S1 states.
+    if (!m_updates)
+        return QStringLiteral("Not checked yet");
+    switch (m_updates->state()) {
+    case UpdateService::State::Idle:
+        return QStringLiteral("Not checked yet");
+    case UpdateService::State::Checking:
+        return QStringLiteral("Checking...");
+    case UpdateService::State::UpToDate:
+        return QStringLiteral("You're up to date");
+    case UpdateService::State::Available: {
+        const QString v = m_updates->availableVersion();
+        return v.isEmpty() ? QStringLiteral("Update available")
+                           : QStringLiteral("Update to v%1 available").arg(v);
+    }
+    case UpdateService::State::CheckFailed:
+        return QStringLiteral("Couldn't reach GitHub - check your connection");
+    case UpdateService::State::Downloading:
+        return QStringLiteral("Downloading...");
+    case UpdateService::State::Verified:
+        return QStringLiteral("Ready to install");
+    case UpdateService::State::DownloadFailed:
+        // D-08 terminal copy - same wording the auto-path toast uses.
+        return QStringLiteral("Update download failed - will try again tomorrow");
+    }
+    return QStringLiteral("Not checked yet");
+}
+
+bool SettingsWindow::updatesAutoInstall() const
+{
+    return m_settingsStore ? m_settingsStore->updatesAutoInstall() : false;
+}
+
+void SettingsWindow::setUpdatesAutoInstall(bool on)
+{
+    if (!m_settingsStore)
+        return;
+    m_settingsStore->setUpdatesAutoInstall(on);
+    emit updateStatusChanged(); // toggle sub-line re-evaluates too
+}
+
+void SettingsWindow::checkForUpdatesNow()
+{
+    if (m_updates)
+        m_updates->checkForUpdates(true); // manual button bypasses the daily guard
+}
+
+bool SettingsWindow::updateAvailable() const
+{
+    return m_updates && m_updates->state() == UpdateService::State::Available;
+}
+
+QString SettingsWindow::pendingVersion() const
+{
+    return updateAvailable() ? m_updates->availableVersion() : QString();
+}
+
+void SettingsWindow::downloadPendingUpdate()
+{
+    if (m_updates && m_updates->state() == UpdateService::State::Available)
+        m_updates->downloadAndInstall();
 }
 
 void SettingsWindow::refreshScanState()

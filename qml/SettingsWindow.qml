@@ -109,11 +109,12 @@ Window {
         border.width: 1
         clip: true
 
-        // Content column — vertical budget 500 <= 528 (UI-SPEC declared;
-        // 07-06: +170 scan section, was 318 <= 328):
-        // 24 pad + 18 header + 12 + 64 + 12 + 88 + 12 + 64 + 12 + 170 + 24 pad
-        // = 500; column content 452 <= 480 column height — 28px slack, no
-        // clipping (research OQ1: growth via tokens, not a ScrollView).
+        // Content column — vertical budget 608 <= 628 (UI-SPEC declared;
+        // 07-06: +170 scan section; Phase 8: +96 updates section):
+        // 24 pad + 18 header + 12 + 64 + 12 + 88 + 12 + 64 + 12 + 170
+        // + 12 + 96 + 24 pad = 608; column content 560 <= 600 column
+        // height — no clipping (research OQ1: growth via tokens, not a
+        // ScrollView).
         Column {
             anchors.fill: parent
             anchors.margins: Theme.settingsPad
@@ -672,6 +673,183 @@ Window {
                             }
                         }
                     }
+            }
+
+            // ── Updates row (96px, Phase 8 UI-SPEC S1) — auto-install toggle,
+            // manual Check button, inline status (D-03/D-10). All values flow
+            // through the injected settingsController; failures are text here,
+            // never popups.
+            Rectangle {
+                id: updatesRow
+                width: parent.width
+                height: Theme.settingsRowUpdates
+                color: "transparent"
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: Theme.separator
+                }
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.spaceXs
+                    Text {
+                        text: "Updates"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeTitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textPrimary
+                    }
+                    Text {
+                        text: "Keep wisp current"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textSecondary
+                    }
+                }
+
+                // Right-side stack: auto-install toggle row + check row,
+                // 28+8+28 = 64 <= 96 budget minus header overlap allowance
+                // (the section header sits left, controls right — scan-section
+                // layout precedent).
+                Column {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.spaceSm
+                    width: 260
+
+                    // Auto-install toggle row — track fills accent when on;
+                    // sub-line states the zero-interaction contract (D-05).
+                    Row {
+                        width: parent.width
+                        height: Theme.settingsRowScanItem
+                        spacing: Theme.spaceSm
+                        Column {
+                            width: parent.width - Theme.toggleWidth - Theme.spaceSm
+                            anchors.verticalCenter: parent.verticalCenter
+                            Text {
+                                text: "Install updates automatically"
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightSemibold
+                                color: Theme.textPrimary
+                            }
+                            Text {
+                                text: "wisp restarts itself to finish updates"
+                                visible: settingsController && settingsController.updatesAutoInstall()
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightRegular
+                                color: Theme.textSecondary
+                            }
+                        }
+                        Rectangle {
+                            id: updatesToggleTrack
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Theme.toggleWidth
+                            height: Theme.toggleHeight
+                            radius: Theme.toggleTrackRadius
+                            color: settingsController && settingsController.updatesAutoInstall()
+                                   ? Theme.toggleTrackOn : Theme.toggleTrackOff
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (settingsController)
+                                        settingsController.setUpdatesAutoInstall(
+                                            !settingsController.updatesAutoInstall())
+                                }
+                            }
+                            Rectangle {
+                                width: Theme.knobSize
+                                height: Theme.knobSize
+                                radius: Theme.knobRadius
+                                color: Theme.knobColor
+                                y: (parent.height - height) / 2
+                                x: settingsController && settingsController.updatesAutoInstall()
+                                   ? parent.width - width - 2 : 2
+                                Behavior on x { NumberAnimation { duration: Theme.animFade; easing: Easing.Linear } }
+                            }
+                        }
+                    }
+
+                    // Check row — accent button (Scan-now clone) + inline
+                    // status; when an update is pending the status turns
+                    // bold textPrimary and a Download now button appears
+                    // (D-03 persistent surface).
+                    Row {
+                        width: parent.width
+                        height: Theme.settingsRowScanItem
+                        spacing: Theme.spaceSm
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 84
+                            height: Theme.settingsRowScanItem
+                            radius: Theme.fieldRadius
+                            color: checkBtn.containsMouse ? Theme.accentDark : Theme.accent
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Check for updates"
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightSemibold
+                                color: Theme.onAccentText
+                            }
+                            MouseArea {
+                                id: checkBtn
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    if (settingsController)
+                                        settingsController.checkForUpdatesNow()
+                                }
+                            }
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 84 - Theme.spaceSm
+                              - (settingsController && settingsController.updateAvailable()
+                                 ? 84 + Theme.spaceSm : 0)
+                            elide: Text.ElideMiddle
+                            text: settingsController ? settingsController.updateStatus()
+                                                     : "Not checked yet"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: settingsController && settingsController.updateAvailable()
+                                         ? Theme.fontWeightSemibold : Theme.fontWeightRegular
+                            color: settingsController && settingsController.updateAvailable()
+                                   ? Theme.textPrimary : Theme.textSecondary
+                        }
+                        Rectangle {
+                            visible: settingsController && settingsController.updateAvailable()
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 84
+                            height: Theme.settingsRowScanItem
+                            radius: Theme.fieldRadius
+                            color: dlBtn.containsMouse ? Theme.accentDark : Theme.accent
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Download now"
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightSemibold
+                                color: Theme.onAccentText
+                            }
+                            MouseArea {
+                                id: dlBtn
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    if (settingsController)
+                                        settingsController.downloadPendingUpdate()
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

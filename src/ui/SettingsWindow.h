@@ -17,6 +17,7 @@ class HotkeyCaptureDialog;
 class HotkeyManager;
 class ScanService;
 class SettingsStore;
+class UpdateService;
 
 // SYS-03 / D-01: the settings surface controller — a small QML host
 // (HotkeyCaptureDialog analog, RESEARCH Pattern 3). Owns the
@@ -41,12 +42,13 @@ class SettingsWindow : public QObject
 
 public:
     // All collaborators are injected (no store reach-in, no service lookup):
-    // the shared engine, the three stores, the EXISTING capture dialog, and
-    // the ScanService (main.cpp owns all of them — this controller only
-    // mediates, 07-05).
+    // the shared engine, the three stores, the EXISTING capture dialog, the
+    // ScanService, and (Phase 8) the UpdateService. main.cpp owns all of
+    // them — this controller only mediates, 07-05.
     explicit SettingsWindow(QQmlEngine *engine, SettingsStore *settingsStore,
                             AutostartManager *autostart, HotkeyManager *hotkeys,
                             HotkeyCaptureDialog *capture, ScanService *scanService,
+                            UpdateService *updates = nullptr,
                             QObject *parent = nullptr);
 
     // Center → fade-in (120ms) → requestActivate; refreshes autostart +
@@ -76,6 +78,15 @@ public:
     Q_INVOKABLE void setScanInterval(int minutes);        // store → refreshInterval
     Q_INVOKABLE void scanNow();                           // → requestScan (single-flight gate)
 
+    // ── Updates section (Phase 8, UI-SPEC S1) ──
+    Q_INVOKABLE QString updateStatus() const;             // composed live from engine state
+    Q_INVOKABLE bool updatesAutoInstall() const;          // live store read (default OFF)
+    Q_INVOKABLE void setUpdatesAutoInstall(bool on);      // store write + re-emit
+    Q_INVOKABLE void checkForUpdatesNow();                // → checkForUpdates(true) bypasses guard
+    Q_INVOKABLE bool updateAvailable() const;             // engine in Available state
+    Q_INVOKABLE QString pendingVersion() const;           // version string while Available
+    Q_INVOKABLE void downloadPendingUpdate();             // → downloadAndInstall()
+
     // 07-05 seam: the native folder picker (QFileDialog lives in QtWidgets,
     // which wisp_core does not link — main.cpp wires it, mirroring
     // FileSearch::setAddExeDialog). Default = no-op → addScanRoot cancels.
@@ -89,6 +100,7 @@ signals:
     void scanRootsChanged();
     void scanIntervalChanged();
     void lastScanSummaryChanged();
+    void updateStatusChanged();
 
 protected:
     // Window-level Esc → close() (the QML surface has no key handler of its
@@ -110,6 +122,7 @@ private:
     HotkeyManager *m_hotkeys;
     HotkeyCaptureDialog *m_capture;
     ScanService *m_scanService;
+    UpdateService *m_updates;
     FolderPicker m_folderPicker;
     QPointer<QQuickWindow> m_window;
     QPointer<QQuickWindow> m_colorDialog;

@@ -53,6 +53,14 @@ public:
     void setScanRoots(const QStringList &roots);
     void setScanIntervalMinutes(int minutes);
 
+    // ── Phase 8 updates (CONTEXT D-05/D-06): auto-install master toggle ──
+    // Default OFF (locked decision from discuss-phase). Live read like the
+    // scan settings; the SettingsWindow controller emits its own change
+    // signal (live-read precedent — this store carries no NOTIFY for
+    // non-accent keys).
+    bool updatesAutoInstall() const;
+    void setUpdatesAutoInstall(bool on);
+
 signals:
     void accentChanged(const QColor &accent);
 
