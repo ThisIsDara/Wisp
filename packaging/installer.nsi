@@ -47,17 +47,6 @@ VIAddVersionKey "LegalCopyright" "© 2026 ThisIsDara"
 ; --- per-user shell folders (install AND uninstall) ---------------
 Function .onInit
   SetShellVarContext Current
-
-  ; --- Phase 8 silent-update contract (D-06/D-13) -------------------
-  ; /S runs ALL selected sections, which would re-enable autostart for
-  ; users who unchecked it at install. Preserve their choice: if OUR
-  ; Run value is absent, unselect the autostart section for this run.
-  ${If} ${Silent}
-    ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "wisp"
-    ${If} $0 == ""
-      SectionSetFlags ${SecAutostart} 0
-    ${EndIf}
-  ${EndIf}
 FunctionEnd
 
 Function un.onInit
@@ -95,12 +84,25 @@ Section "wisp" SecWisp
   ; (CONTEXT D-13) so it can be re-run manually if an update misbehaves.
 SectionEnd
 
-; --- Start with Windows (2026-08-15) — optional, default ON --------
+; --- Start with Windows (2026-08-15) - optional, default ON --------
 ; Writes the SAME HKCU Run value the in-app toggle uses (D-12 format:
 ; "\"<exe>\" --autostart"). Unchecking during install leaves/removes it
-; per the user's choice — never silently forces autostart on anyone.
+; per the user's choice - never silently forces autostart on anyone.
+;
+; Phase 8 silent-update contract (D-06): /S selects ALL sections, which
+; would re-enable autostart for users who unchecked it at install. The
+; guard lives HERE (not .onInit - ${SecAutostart} is not defined until
+; the Section declaration compiles): if OUR Run value is absent, skip
+; the write entirely so an opt-out user stays opted out.
 Section "Start with Windows" SecAutostart
+  ${If} ${Silent}
+    ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "wisp"
+    ${If} $0 == ""
+      Goto done_autostart
+    ${EndIf}
+  ${EndIf}
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "wisp" '"$InstDir\wisp.exe" --autostart'
+  done_autostart:
 SectionEnd
 
 ; --- Start Menu shortcut ------------------------------------------
