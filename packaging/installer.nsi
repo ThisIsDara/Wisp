@@ -14,11 +14,13 @@ InstallDir "$LocalAppData\Programs\wisp"
 Caption "wisp — app launcher"
 
 ; --- version metadata (SignPath artifact policy: product name/version) --
-VIProductVersion "0.1.2.0"
+; BUMP IN LOCKSTEP with CMakeLists project(VERSION ...) every release -
+; the updater compares WISP_VERSION against the release tag (Phase 8 D-15).
+VIProductVersion "0.1.3.0"
 VIAddVersionKey "ProductName" "wisp"
 VIAddVersionKey "FileDescription" "wisp — app launcher"
-VIAddVersionKey "FileVersion" "0.1.2"
-VIAddVersionKey "ProductVersion" "0.1.2"
+VIAddVersionKey "FileVersion" "0.1.3"
+VIAddVersionKey "ProductVersion" "0.1.3"
 VIAddVersionKey "CompanyName" "ThisIsDara"
 VIAddVersionKey "LegalCopyright" "© 2026 ThisIsDara"
 
@@ -45,6 +47,17 @@ VIAddVersionKey "LegalCopyright" "© 2026 ThisIsDara"
 ; --- per-user shell folders (install AND uninstall) ---------------
 Function .onInit
   SetShellVarContext Current
+
+  ; --- Phase 8 silent-update contract (D-06/D-13) -------------------
+  ; /S runs ALL selected sections, which would re-enable autostart for
+  ; users who unchecked it at install. Preserve their choice: if OUR
+  ; Run value is absent, unselect the autostart section for this run.
+  ${If} ${Silent}
+    ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "wisp"
+    ${If} $0 == ""
+      SectionSetFlags ${SecAutostart} 0
+    ${EndIf}
+  ${EndIf}
 FunctionEnd
 
 Function un.onInit
@@ -70,6 +83,16 @@ Section "wisp" SecWisp
   ${If} $0 != 1
     ExecWait '"$InstDir\vc_redist.x64.exe" /install /quiet /norestart'
   ${EndIf}
+
+  ; --- Phase 8: silent updates must bring wisp back (D-12) ----------
+  ; MUI_FINISHPAGE_RUN does not exist in /S mode (research section 3).
+  ; The updater quit-waits on us; relaunch resident-hidden exactly as
+  ; the boot path does. Interactive installs still use the Finish page.
+  ${If} ${Silent}
+    Exec '"$InstDir\wisp.exe" --autostart'
+  ${EndIf}
+  ; NOTE: the downloaded installer copy in %TEMP% is intentionally KEPT
+  ; (CONTEXT D-13) so it can be re-run manually if an update misbehaves.
 SectionEnd
 
 ; --- Start with Windows (2026-08-15) — optional, default ON --------
