@@ -812,23 +812,6 @@ Window {
                                 }
                             }
                         }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - checkBtn.width - Theme.spaceSm
-                              - (settingsController && settingsController.updateAvailable
-                                 ? dlBtn.width + Theme.spaceSm : 0)
-                            elide: Text.ElideMiddle
-                            // PROPERTY binding (no parens) — refreshes on
-                            // updateStatusChanged from any engine transition.
-                            text: settingsController ? settingsController.updateStatus
-                                                     : "Not checked yet"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeSubtitle
-                            font.weight: settingsController && settingsController.updateAvailable
-                                         ? Theme.fontWeightSemibold : Theme.fontWeightRegular
-                            color: settingsController && settingsController.updateAvailable
-                                   ? Theme.textPrimary : Theme.textSecondary
-                        }
                         Rectangle {
                             visible: settingsController && settingsController.updateAvailable
                             anchors.verticalCenter: parent.verticalCenter
@@ -855,6 +838,26 @@ Window {
                                 }
                             }
                         }
+                    }
+
+                    // Status line — full width on its own row so even the
+                    // longest copy ("Couldn't reach GitHub - check your
+                    // connection") reads without squeezing (UAT fix).
+                    Text {
+                        width: parent.width
+                        height: 22
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        // PROPERTY binding (no parens) — refreshes on
+                        // updateStatusChanged from any engine transition.
+                        text: settingsController ? settingsController.updateStatus
+                                                 : "Not checked yet"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        font.weight: settingsController && settingsController.updateAvailable
+                                     ? Theme.fontWeightSemibold : Theme.fontWeightRegular
+                        color: settingsController && settingsController.updateAvailable
+                               ? Theme.textPrimary : Theme.textSecondary
                     }
                 }
             }

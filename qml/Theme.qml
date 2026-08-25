@@ -107,9 +107,9 @@ QtObject {
     // Window + surface geometry (480x360 → 480x560 + scan section, 07-05;
     // surface = window − 2x16 shadow margin, same shell as the launcher).
 readonly property int settingsWindowWidth: 480
-readonly property int settingsWindowHeight: 660   // +100 Phase 8 Updates section (was 560)
+readonly property int settingsWindowHeight: 688   // +128 Phase 8 Updates section (was 560)
 readonly property int settingsSurfaceWidth: 448
-readonly property int settingsSurfaceHeight: 628  // +100 Phase 8 Updates section (was 528)
+readonly property int settingsSurfaceHeight: 656  // +128 Phase 8 Updates section (was 528)
     readonly property int colorDialogWindowWidth: 280
     readonly property int colorDialogWindowHeight: 320
     readonly property int colorDialogSurfaceWidth: 248
@@ -140,9 +140,10 @@ readonly property int settingsSurfaceHeight: 628  // +100 Phase 8 Updates sectio
     readonly property int settingsRowScan: 170
     readonly property int settingsRowScanItem: 28 // per-root row / interval row / action row height
     readonly property int settingsRowScanRoots: 56 // visible root-list height (2 rows of 28)
-    // Phase 8 Updates section: header(18) + gap(12) + toggle row(28) + gap(8)
-    // + check row(28) = 94 within 96 (declared on the 4-grid).
-    readonly property int settingsRowUpdates: 96
+    // Phase 8 Updates section: header(18) + gap(12) + toggle row(28) +
+    // gap(8) + action row(28) + gap(4) + full-width status line(22) = 120
+    // within 124 (declared on the 4-grid).
+    readonly property int settingsRowUpdates: 124
     // Phase 8 update dialogs (UI-SPEC S2/S3 geometry).
     readonly property int updateDialogWidth: 320
     readonly property int updateDialogHeight: 132
