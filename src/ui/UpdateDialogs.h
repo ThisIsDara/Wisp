@@ -20,14 +20,9 @@ public:
     explicit UpdateDialogs(QQmlEngine *engine, QObject *parent = nullptr);
 
     // Download now / Later prompt (UI-SPEC S2). Esc = Later.
+    // (Progress moved INTO Settings - UX pass 08-05; floating window removed.)
     void showPrompt(const QString &version);
     void closePrompt();
-
-    // Determinate progress window (UI-SPEC S3). total <= 0 renders an empty bar.
-    void showProgress(const QString &version);
-    void setProgress(qint64 received, qint64 total);
-    void setVerifying(); // swap label once the download finished hashing
-    void closeProgress();
 
     // Called from QML buttons.
     Q_INVOKABLE void accept();
@@ -42,5 +37,4 @@ private:
 
     QQmlEngine *m_engine;
     QPointer<QQuickWindow> m_prompt;
-    QPointer<QQuickWindow> m_progress;
 };

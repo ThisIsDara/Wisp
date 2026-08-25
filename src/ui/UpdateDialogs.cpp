@@ -77,39 +77,6 @@ void UpdateDialogs::closePrompt()
         m_prompt->close();
 }
 
-void UpdateDialogs::showProgress(const QString &version)
-{
-    QQuickWindow *win = ensureWindow(m_progress, QStringLiteral("UpdateProgress"));
-    if (!win)
-        return;
-    win->setProperty("progressLabel",
-                     QStringLiteral("Downloading wisp v%1...").arg(version));
-    win->setProperty("progressRatio", 0.0);
-    centerOnPrimary(win);
-    QMetaObject::invokeMethod(win, "show");
-}
-
-void UpdateDialogs::setProgress(qint64 received, qint64 total)
-{
-    if (!m_progress)
-        return;
-    m_progress->setProperty("progressRatio", total > 0 ? double(received) / double(total) : 0.0);
-}
-
-void UpdateDialogs::setVerifying()
-{
-    if (!m_progress)
-        return;
-    m_progress->setProperty("progressLabel", QStringLiteral("Verifying..."));
-    m_progress->setProperty("progressRatio", 1.0);
-}
-
-void UpdateDialogs::closeProgress()
-{
-    if (m_progress)
-        m_progress->close();
-}
-
 void UpdateDialogs::accept()
 {
     closePrompt();

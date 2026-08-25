@@ -333,29 +333,26 @@ int main(int argc, char *argv[])
                          // D-05/D-06 zero-interaction: toggle ON = download and
                          // install immediately whenever an update is found.
                          if (settingsStore.updatesAutoInstall()) {
-                             *dlSource = 2;
-                             updateDialogs.showProgress(v);
+                                                     *dlSource = 2; // silent: progress lives in Settings if open
                              updates.downloadAndInstall();
                          }
                      });
     QObject::connect(&updateDialogs, &UpdateDialogs::promptAccepted, [&] {
         if (updates.state() != UpdateService::State::Available)
             return;
-        *dlSource = 1; // manual path — failures stay inline (Settings status)
-        updateDialogs.showProgress(updates.availableVersion());
+        *dlSource = 1; // manual path - failures inline (Settings), success via updated toast
         updates.downloadAndInstall();
     });
     // promptRejected ("Later"/Esc): deliberate no-op — tomorrow's daily check
     // re-toasts while the old version persists (D-02).
     QObject::connect(&updates, &UpdateService::downloadProgress,
                      [&](qint64 received, qint64 total) {
-                         updateDialogs.setProgress(received, total);
-                         if (total > 0 && received >= total)
-                             updateDialogs.setVerifying();
+                         // UX pass: the bar lives INSIDE Settings now; no
+                         // floating window. Auto path stays fully quiet.
+                         settingsWindow.setDownloadProgress(received, total);
                      });
     QObject::connect(&updates, &UpdateService::downloadVerified,
                      [&](const QString &installerPath) {
-                         updateDialogs.closeProgress();
                          const QString v = updates.availableVersion();
                          { // one-shot "updated" marker consumed by the relaunched binary (D-14)
                              QSettings ini(QSettings::IniFormat, QSettings::UserScope,
@@ -370,7 +367,6 @@ int main(int argc, char *argv[])
                      });
     QObject::connect(&updates, &UpdateService::downloadFailed,
                      [&](const QString &reason) {
-                         updateDialogs.closeProgress();
                          qWarning("UpdateService download failed: %s", qPrintable(reason));
                          // D-08 terminal: toast on the silent auto path only;
                          // the manual path's failure text lives in Settings (D-10).

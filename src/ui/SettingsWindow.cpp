@@ -1,5 +1,6 @@
 #include "ui/SettingsWindow.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QEvent>
 #include <QGuiApplication>
@@ -238,33 +239,95 @@ void SettingsWindow::scanNow()
 
 QString SettingsWindow::updateStatus() const
 {
-    // Composed LIVE from engine state - the single source of the inline
-    // status text (D-10). Copy per UI-SPEC S1 states.
+    // Plain-outcome status (UX pass): what's happening, with % when downloading.
     if (!m_updates)
         return QStringLiteral("Not checked yet");
     switch (m_updates->state()) {
     case UpdateService::State::Idle:
         return QStringLiteral("Not checked yet");
     case UpdateService::State::Checking:
-        return QStringLiteral("Checking...");
+        return QStringLiteral("Checking for updates...");
     case UpdateService::State::UpToDate:
-        return QStringLiteral("You're up to date");
+        // WISP_VERSION is a wisp-target define (not visible in core) — the
+        // app-version singleton carries the same value (main.cpp sets it).
+        return QStringLiteral("You're up to date (v%1)")
+            .arg(m_updates->availableVersion().isEmpty()
+                     ? QCoreApplication::applicationVersion()
+                     : m_updates->availableVersion());
     case UpdateService::State::Available: {
         const QString v = m_updates->availableVersion();
         return v.isEmpty() ? QStringLiteral("Update available")
-                           : QStringLiteral("Update to v%1 available").arg(v);
+                           : QStringLiteral("v%1 available").arg(v);
     }
     case UpdateService::State::CheckFailed:
-        return QStringLiteral("Couldn't reach GitHub - check your connection");
-    case UpdateService::State::Downloading:
-        return QStringLiteral("Downloading...");
+        return QStringLiteral("Couldn't reach GitHub");
+    case UpdateService::State::Downloading: {
+        const QString v = m_updates->availableVersion();
+        const int pct = m_dlTotal > 0
+                            ? int(100.0 * double(m_dlReceived) / double(m_dlTotal))
+                            : 0;
+        return v.isEmpty()
+                   ? QStringLiteral("Downloading - %1%").arg(pct)
+                   : QStringLiteral("Downloading v%1 - %2%").arg(v).arg(pct);
+    }
     case UpdateService::State::Verified:
-        return QStringLiteral("Ready to install");
+        return QStringLiteral("Finishing up...");
     case UpdateService::State::DownloadFailed:
         // D-08 terminal copy - same wording the auto-path toast uses.
-        return QStringLiteral("Update download failed - will try again tomorrow");
+        return QStringLiteral("Download failed");
     }
     return QStringLiteral("Not checked yet");
+}
+
+bool SettingsWindow::updateDownloading() const
+{
+    if (!m_updates)
+        return false;
+    const auto s = m_updates->state();
+    return s == UpdateService::State::Downloading || s == UpdateService::State::Verified;
+}
+
+double SettingsWindow::downloadRatio() const
+{
+    return m_dlTotal > 0
+               ? qBound(0.0, double(m_dlReceived) / double(m_dlTotal), 1.0)
+               : 0.0;
+}
+
+QString SettingsWindow::updateHint() const
+{
+    // The "what happens next" line (UX pass): every state answers the
+    // user's implicit "so what now?" in one calm sentence.
+    if (!m_updates)
+        return QStringLiteral("wisp checks once a day at startup");
+    switch (m_updates->state()) {
+    case UpdateService::State::Idle:
+        return QStringLiteral("wisp checks once a day at startup");
+    case UpdateService::State::Checking:
+        return QString(); // obvious - no hint needed, line hides
+    case UpdateService::State::UpToDate:
+        return QStringLiteral("Next check: next startup");
+    case UpdateService::State::Available:
+        return updatesAutoInstall()
+                   ? QStringLiteral("Will install automatically")
+                   : QStringLiteral("Download now, or leave it - we'll remind you tomorrow");
+    case UpdateService::State::CheckFailed:
+        return QStringLiteral("Check your connection - we'll retry tomorrow");
+    case UpdateService::State::Downloading:
+        return QStringLiteral("wisp restarts itself when finished");
+    case UpdateService::State::Verified:
+        return QStringLiteral("Finishing up - wisp restarts now");
+    case UpdateService::State::DownloadFailed:
+        return QStringLiteral("We'll try again tomorrow at startup");
+    }
+    return QString();
+}
+
+void SettingsWindow::setDownloadProgress(qint64 received, qint64 total)
+{
+    m_dlReceived = received;
+    m_dlTotal = total;
+    emit updateStatusChanged(); // drives status % + bar ratio bindings
 }
 
 bool SettingsWindow::updatesAutoInstall() const

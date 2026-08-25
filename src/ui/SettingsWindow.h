@@ -45,6 +45,9 @@ class SettingsWindow : public QObject
                WRITE setUpdatesAutoInstall NOTIFY updatesAutoInstallChanged)
     Q_PROPERTY(QString updateStatus READ updateStatus NOTIFY updateStatusChanged)
     Q_PROPERTY(bool updateAvailable READ updateAvailable NOTIFY updateStatusChanged)
+    Q_PROPERTY(bool updateDownloading READ updateDownloading NOTIFY updateStatusChanged)
+    Q_PROPERTY(double downloadRatio READ downloadRatio NOTIFY updateStatusChanged)
+    Q_PROPERTY(QString updateHint READ updateHint NOTIFY updateStatusChanged)
 
 public:
     // All collaborators are injected (no store reach-in, no service lookup):
@@ -93,6 +96,12 @@ public:
     Q_INVOKABLE QString pendingVersion() const;           // version string while Available
     Q_INVOKABLE void downloadPendingUpdate();             // → downloadAndInstall()
 
+    // ── non-QML feed: live download progress (main.cpp wiring) ──
+    bool updateDownloading() const;
+    double downloadRatio() const;
+    QString updateHint() const;
+    void setDownloadProgress(qint64 received, qint64 total);
+
     // 07-05 seam: the native folder picker (QFileDialog lives in QtWidgets,
     // which wisp_core does not link — main.cpp wires it, mirroring
     // FileSearch::setAddExeDialog). Default = no-op → addScanRoot cancels.
@@ -130,6 +139,8 @@ private:
     HotkeyCaptureDialog *m_capture;
     ScanService *m_scanService;
     UpdateService *m_updates;
+    qint64 m_dlReceived = 0;   // live download progress (setDownloadProgress)
+    qint64 m_dlTotal = 0;
     FolderPicker m_folderPicker;
     QPointer<QQuickWindow> m_window;
     QPointer<QQuickWindow> m_colorDialog;

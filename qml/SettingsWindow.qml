@@ -840,12 +840,34 @@ Window {
                         }
                     }
 
-                    // Status line — full width on its own row so even the
-                    // longest copy ("Couldn't reach GitHub - check your
-                    // connection") reads without squeezing (UAT fix).
+                    // Download bar — determinate accent fill while a download
+                    // is in flight (scan-bar tokens; UX pass moved progress
+                    // INTO Settings; the floating window is gone).
+                    Item {
+                        width: parent.width
+                        height: Theme.scanBarHeight + 2
+                        visible: settingsController && settingsController.updateDownloading
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: Theme.scanBarRadius
+                            color: Theme.surfaceSecondary
+                        }
+                        Rectangle {
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                            anchors.left: parent.left
+                            width: (settingsController ? settingsController.downloadRatio : 0)
+                                   * parent.width
+                            radius: Theme.scanBarRadius
+                            color: Theme.accent
+                        }
+                    }
+
+                    // Status line — plain outcome, % included while downloading.
                     Text {
                         width: parent.width
-                        height: 22
+                        height: 20
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         // PROPERTY binding (no parens) — refreshes on
@@ -858,6 +880,20 @@ Window {
                                      ? Theme.fontWeightSemibold : Theme.fontWeightRegular
                         color: settingsController && settingsController.updateAvailable
                                ? Theme.textPrimary : Theme.textSecondary
+                    }
+
+                    // Hint line — the "what happens next" answer for every
+                    // state. Hides itself when empty (Checking).
+                    Text {
+                        width: parent.width
+                        height: visible ? 16 : 0
+                        visible: settingsController && settingsController.updateHint !== ""
+                        elide: Text.ElideRight
+                        text: settingsController ? settingsController.updateHint : ""
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textSecondary
                     }
                 }
             }
