@@ -145,10 +145,14 @@ readonly property int settingsSurfaceHeight: 656  // +128 Phase 8 Updates sectio
     // within 124 (declared on the 4-grid).
     readonly property int settingsRowUpdates: 124
     // Phase 8 update dialogs (UI-SPEC S2/S3 geometry).
-    readonly property int updateDialogWidth: 320
-    readonly property int updateDialogHeight: 132
+    // Prompt inner budget: title(20)+gap(8)+subcopy(2x16)+gap(8)+buttons(28)
+    // = 96 <= 136 (window - 2x16 shadow/surface margins). UAT fix: 132 was
+    // ~30px short - buttons landed outside the window.
+    readonly property int updateDialogWidth: 336
+    readonly property int updateDialogHeight: 168
+    // Progress inner budget: label(18)+gap(12)+bar(4) = 34 <= 48.
     readonly property int updateProgressWidth: 280
-    readonly property int updateProgressHeight: 88
+    readonly property int updateProgressHeight: 112
     // Autostart toggle (UI-SPEC Color interaction tokens)
     readonly property int toggleWidth: 40
     readonly property int toggleHeight: 20

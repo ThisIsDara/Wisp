@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(wisp VERSION 0.1.3 LANGUAGES CXX)
+project(wisp VERSION 0.1.1 LANGUAGES CXX) # TEMP UAT STAGING: real version is 0.1.3 - restore before release!
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
