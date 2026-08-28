@@ -56,6 +56,10 @@ FunctionEnd
 ; --- install ------------------------------------------------------
 Section "wisp" SecWisp
   SectionIn RO   ; core payload — always installed
+  ; wisp is tray-resident — manual double-click while running locks Qt DLLs
+  ; (Qt6QmlModels.dll etc.). Close it first so File can overwrite.
+  ExecWait '"$WINDIR\System32\taskkill.exe" /f /im wisp.exe' ; ignore exit code if not running
+  Sleep 400
   SetOutPath "$InstDir"
   File /r "..\build\deploy\wisp\*"   ; wisp.exe, Qt DLLs, plugins, qml, qt.conf, NOTICES, vc_redist.x64.exe
   WriteUninstaller "$InstDir\Uninst.exe"
