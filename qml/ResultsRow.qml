@@ -73,10 +73,11 @@ Item {
         Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
         Text {
             anchors.centerIn: parent
-            text: model.isFolder ? "\u25B8" : (model.displayName.length > 0 ? model.displayName.charAt(0).toUpperCase() : "")
-            font.pixelSize: Theme.fontSizeSubtitle
+            text: model.iconKey === "calc" ? "\uE8EF" : (model.isFolder ? "\u25B8" : (model.displayName.length > 0 ? model.displayName.charAt(0).toUpperCase() : ""))
+            font.family: model.iconKey === "calc" ? "Segoe MDL2 Assets" : ""
+            font.pixelSize: model.iconKey === "calc" ? 24 : Theme.fontSizeSubtitle
             font.weight: Theme.fontWeightSemibold
-            color: model.isFolder ? Theme.accentLight : Theme.textSecondary
+            color: model.iconKey === "calc" ? Theme.appOutline : (model.isFolder ? Theme.accentLight : Theme.textSecondary)
         }
     }
 
@@ -267,7 +268,7 @@ Item {
     // fall through (LeftButton only) so the context menu still works.
     Item {
         id: favBtn
-        visible: true
+        visible: model.iconKey !== "calc"
         width: Theme.removeButtonSize
         height: Theme.removeButtonSize
         x: (parent.width - Theme.spaceSm) / row.scale - Theme.removeButtonSize

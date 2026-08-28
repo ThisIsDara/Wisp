@@ -419,6 +419,8 @@ Window {
                     resultsModel.setQuery(text); fileSearch.setQuery(text)
                 }
             }
+
+
             // Search-field focus identity (2026-08-15 UI pass): a 2px
             // neon-orange underline (appOutline — matches the app outline and
             // separators; the user dropped the accent-blue here, 2026-08-15)

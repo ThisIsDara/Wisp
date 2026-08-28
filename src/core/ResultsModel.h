@@ -29,6 +29,7 @@ class ResultsModel : public QAbstractListModel
     Q_PROPERTY(int hiddenCount READ hiddenCount NOTIFY hiddenCountChanged) // 05.1: footer visibility (rule- AND user-hidden)
     Q_PROPERTY(bool favoritesOnly READ favoritesOnly WRITE setFavoritesOnly NOTIFY favoritesOnlyChanged) // 2026-08-15: "Favorites" tab mode
     Q_PROPERTY(int favoriteCount READ favoriteCount) // 2026-08-15: persisted favorite-id count — startup tab default (All if 0)
+    Q_PROPERTY(QString calculatorResult READ calculatorResult NOTIFY calculatorResultChanged)
 
 public:
     enum Roles {
@@ -108,6 +109,11 @@ public:
     void setFavoriteStore(FavoriteStore fn);
     void setFavoriteIds(const QSet<QString> &ids); // seed persisted favorites at startup
 
+    // ── Frecency (count + recency) — LaunchHistory-backed ──
+    using FrecencyFn = std::function<int(const QString &id)>;
+    void setFrecencyFn(FrecencyFn fn);
+    QString calculatorResult() const;
+
     // ── Phase-4 file results (04-04): D-01..D-07, D-14, D-15 ──
     // setFileResults(generation, query, files): UI-thread delivery from the
     // file-search coordinator (04-05 wiring). Stores the latest generation,
@@ -132,12 +138,14 @@ signals:
     void showHiddenChanged();
     void hiddenCountChanged();  // 05.1: QML footer "Show hidden (N)" visibility
     void favoritesOnlyChanged(); // 2026-08-15: "Favorites" tab toggle
+    void calculatorResultChanged();
 
 private:
     // Display row: resolved by data()/snapshotSelected() against m_entries
     // (fromFiles == fromAdded == false), m_fileEntries (fromFiles == true),
     // or m_addedEntries (fromAdded == true — the D-14 default-list channel).
-    struct Row { int entryIndex; bool fromFiles; bool fromAdded = false; };
+    // Calculator rows are ephemeral synthetic entries (isCalculator == true).
+    struct Row { int entryIndex; bool fromFiles; bool fromAdded = false; bool isCalculator = false; };
     const AppEntry &entryAt(const Row &row) const;
 
     // App-only filter+rank (the 03-05 loop verbatim) filling m_order/m_ranges;
@@ -173,6 +181,9 @@ private:
     bool m_favoritesOnly = false;  // 2026-08-15: "Favorites" tab mode
     QSet<QString> m_favoriteIds;   // 2026-08-15: favorite ids (targetPath/aumid) — survives rebuilds
     FavoriteStore m_favoriteStore; // 2026-08-15: persistence seam (FavoritesStore in production, spies in tests)
+    FrecencyFn m_frecencyFn;     // frecency boost — LaunchHistory-backed
+    AppEntry m_calcEntry;        // synthetic calculator row (when query is math)
+    bool m_hasCalc = false;
     static constexpr int kVisibleRows = 7;   // 640×400 shell ≈ 7 rows of 44px (UI-SPEC geometry)
     static constexpr int kMaxFileRows = 1000; // 07-06: file rows ARE the list; the index
                                              // pipeline caps candidates at 1000 upstream,

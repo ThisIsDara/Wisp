@@ -44,6 +44,11 @@ public:
 
     // Test + v2 recency accessor. 0 for unknown paths.
     int launchCount(const QString &path) const;
+    // ms since epoch of last launch, 0 if never launched.
+    qint64 lastLaunchMs(const QString &path) const;
+    // Frecency boost: frequency * recency decay, capped < kTierGap (200) so
+    // tier order is preserved. 0 if never launched.
+    int frecencyBoost(const QString &path) const;
 
 private:
     QString normalize(const QString &path) const; // QDir::toNativeSeparators

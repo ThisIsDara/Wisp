@@ -187,6 +187,10 @@ int main(int argc, char *argv[])
         favoritesStore.setFavorite(id, favorite);
     });
     resultsModel.setFavoriteIds(favoritesStore.favoriteIds());
+    // Frecency: history-backed boost (< tier gap, so tier order preserved)
+    resultsModel.setFrecencyFn([&history](const QString &id) {
+        return history.frecencyBoost(id);
+    });
     // D-14: the default-list escape hatch — addedExecutables ONLY (never
     // launch history): manual picks join the empty-query list, launched
     // executables don't (CUR-04 intent). Stamped with the curation store so

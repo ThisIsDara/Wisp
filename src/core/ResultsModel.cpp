@@ -1,6 +1,9 @@
 #include "core/ResultsModel.h"
+#include "core/Calculator.h"
 
+#include <QClipboard>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QHash>
 #include <QSet>
 
@@ -116,10 +119,15 @@ void ResultsModel::setQuery(const QString &query)
 
 void ResultsModel::buildAppOrder()
 {
+    const bool oldHasCalc = m_hasCalc;
+    const QString oldCalc = m_hasCalc ? m_calcEntry.targetPath : QString();
     m_order.clear();
     m_ranges.clear();
+    m_hasCalc = false;
 
     if (m_query.isEmpty()) {
+        if (oldHasCalc)
+            emit calculatorResultChanged();
         // D-01: full list in canonical order — the curated catalog PLUS the
         // D-14 manual picks (CUR-04 escape hatch), interleaved alphabetically,
         // ONE merged list (no sectioning).
@@ -179,20 +187,45 @@ void ResultsModel::buildAppOrder()
         if (r.score > 0)
             scored.append({ Row{ i, false }, r });
     }
-    std::sort(scored.begin(), scored.end(), [this](const auto &a, const auto &b) {
-        if (a.second.score != b.second.score)
-            return a.second.score > b.second.score; // D-04 rank desc
-        // D-05: alphabetical tie-break — stable and predictable
-        return m_entries.at(a.first.entryIndex).displayName.toCaseFolded()
-               < m_entries.at(b.first.entryIndex).displayName.toCaseFolded();
-    });
-    m_order.reserve(scored.size());
-    m_ranges.reserve(scored.size());
+    // Frecency boost: frequency * recency decay, capped < tier gap
+    if (m_frecencyFn) {
+        for (auto &s : scored) {
+            const int boost = m_frecencyFn(idOf(m_entries.at(s.first.entryIndex)));
+            s.second.score += boost;
+        }
+        std::sort(scored.begin(), scored.end(), [this](const auto &a, const auto &b) {
+            if (a.second.score != b.second.score)
+                return a.second.score > b.second.score;
+            return m_entries.at(a.first.entryIndex).displayName.toCaseFolded()
+                   < m_entries.at(b.first.entryIndex).displayName.toCaseFolded();
+        });
+    } else {
+        std::sort(scored.begin(), scored.end(), [this](const auto &a, const auto &b) {
+            if (a.second.score != b.second.score)
+                return a.second.score > b.second.score; // D-04 rank desc
+            // D-05: alphabetical tie-break — stable and predictable
+            return m_entries.at(a.first.entryIndex).displayName.toCaseFolded()
+                   < m_entries.at(b.first.entryIndex).displayName.toCaseFolded();
+        });
+    }
+    m_order.reserve(scored.size() + 1);
+    m_ranges.reserve(scored.size() + 1);
+    // Calculator synthetic row: top of list when query is math
+    if (auto calc = Calculator::evaluate(m_query)) {
+        m_calcEntry.source = AppEntry::Source::Calculator;
+        m_calcEntry.displayName = m_query.trimmed() + QStringLiteral(" = ") + *calc;
+        m_calcEntry.targetPath = *calc;
+        m_hasCalc = true;
+        m_order.append(Row{ 0, false, false, true });
+        m_ranges.append(FuzzyMatcher::Result{ 2000, {} }); // always top
+    }
     for (const auto &s : scored) {
         m_order.append(s.first);
         m_ranges.append(s.second);
     }
     filterFavorites(); // 2026-08-15: favorites tab — prune to favorite rows when active
+    if (m_hasCalc != oldHasCalc || (m_hasCalc && m_calcEntry.targetPath != oldCalc))
+        emit calculatorResultChanged();
 }
 
 void ResultsModel::mergeFiles()
@@ -340,6 +373,8 @@ QVariant ResultsModel::data(const QModelIndex &idx, int role) const
     case DisplayNameRole:
         return entry.displayName;
     case SubtitleRole: {
+        if (entry.source == AppEntry::Source::Calculator)
+            return QStringLiteral("Copy result");
         // D-02: File rows subtitle = the FULL path (elided in QML), not the
         // file name — BEFORE the existing Lnk/Uwp handling, which stays.
         if (entry.source == AppEntry::Source::File)
@@ -353,6 +388,8 @@ QVariant ResultsModel::data(const QModelIndex &idx, int role) const
         // D-04: folder file rows only — apps and plain files are false.
         return entry.isFolder;
     case IconKeyRole: {
+        if (entry.source == AppEntry::Source::Calculator)
+            return QStringLiteral("calc");
         // 05-04: image://wispicons/{id} source in the parseKey grammar
         // (WinIconExtractor.h:49-72). Lnk → the enumerator's iconRef
         // ('path;index', GetIconLocation output) verbatim, else "path:" +
@@ -386,11 +423,15 @@ QVariant ResultsModel::data(const QModelIndex &idx, int role) const
     case IsHiddenRole:
         return entry.hidden;
     case IsHideableRole:
+        if (entry.source == AppEntry::Source::Calculator)
+            return false;
         // CUR-04 parity with hideSelected(): TRANSIENT index file rows are
         // never hideable (the search escape hatch stays open); app rows,
         // UWP rows, and manual picks (fromAdded) all are.
         return !(entry.source == AppEntry::Source::File && !row.fromAdded);
     case IsFavoriteRole:
+        if (entry.source == AppEntry::Source::Calculator)
+            return false;
         // 2026-08-15: favorites are per-ID (targetPath/aumid), so membership
         // survives rebuilds for ANY row type (file rows too).
         return m_favoriteIds.contains(idOf(entry));
@@ -429,6 +470,8 @@ AppEntry ResultsModel::snapshotSelected() const
 
 const AppEntry &ResultsModel::entryAt(const Row &row) const
 {
+    if (row.isCalculator)
+        return m_calcEntry;
     if (row.fromAdded)
         return m_addedEntries.at(row.entryIndex);
     if (row.fromFiles)
@@ -592,7 +635,7 @@ void ResultsModel::filterFavorites()
     keep.reserve(m_order.size());
     keepRanges.reserve(m_order.size());
     for (int i = 0; i < m_order.size(); ++i) {
-        if (isFavoriteRow(m_order.at(i))) {
+        if (m_order.at(i).isCalculator || isFavoriteRow(m_order.at(i))) {
             keep.append(m_order.at(i));
             keepRanges.append(m_ranges.at(i));
         }
@@ -639,6 +682,18 @@ void ResultsModel::setFavoriteStore(FavoriteStore fn)
 void ResultsModel::setFavoriteIds(const QSet<QString> &ids)
 {
     m_favoriteIds = ids;
+}
+
+void ResultsModel::setFrecencyFn(FrecencyFn fn)
+{
+    m_frecencyFn = std::move(fn);
+}
+
+QString ResultsModel::calculatorResult() const
+{
+    if (!m_hasCalc)
+        return QString();
+    return m_calcEntry.targetPath;
 }
 
 void ResultsModel::favoriteSelected()

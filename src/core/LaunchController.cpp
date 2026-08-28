@@ -2,6 +2,9 @@
 
 #include "core/ResultsModel.h"
 
+#include <QClipboard>
+#include <QGuiApplication>
+
 LaunchController::LaunchController(QObject *parent)
     : QObject(parent)
 {
@@ -102,6 +105,12 @@ void LaunchController::launchIndex(int index, bool elevated)
 
 void LaunchController::launchEntry(const AppEntry &snap, bool elevated)
 {
+    if (snap.source == AppEntry::Source::Calculator) {
+        if (QClipboard *cb = QGuiApplication::clipboard())
+            cb->setText(snap.targetPath);
+        // Don't dismiss — keep launcher open so user can keep calculating
+        return;
+    }
     if (elevated && snap.source == AppEntry::Source::Uwp) {
         // D-11: UWP/Store apps structurally cannot elevate (STACK — no
         // elevation verb for UWP). Refuse BEFORE any attempt; the 03-05 QML

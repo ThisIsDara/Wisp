@@ -1,5 +1,6 @@
 #include "core/LaunchHistory.h"
 
+#include <QDateTime>
 #include <QDir>
 
 #include <QSet>
@@ -14,6 +15,7 @@ namespace {
 // so group names are slash-free and every path key is native-normalized.
 const QString kLaunchHistoryGroup = QStringLiteral("launchHistory");
 const QString kAddedExecutablesGroup = QStringLiteral("addedExecutables");
+const QString kLaunchRecencyGroup = QStringLiteral("launchRecency");
 
 // PATTERNS §5 (HotkeyManager analog): IniFormat + UserScope + "TID"/"wisp" →
 // %APPDATA%\TID\wisp\wisp.ini; an explicit path is the QTemporaryDir test
@@ -61,6 +63,9 @@ void LaunchHistory::recordLaunch(const AppEntry &entry)
     const QMutexLocker locker(&m_mutex);
     const QString key = keyFor(kLaunchHistoryGroup, entry.targetPath);
     m_settings.setValue(key, m_settings.value(key, 0).toInt() + 1);
+    // Frecency: also stamp last-launch time
+    m_settings.setValue(keyFor(kLaunchRecencyGroup, entry.targetPath),
+                        QDateTime::currentMSecsSinceEpoch());
     m_settings.sync();
 }
 
@@ -131,6 +136,36 @@ int LaunchHistory::launchCount(const QString &path) const
     // WR-01: may run while the worker iterates trackedExecutables — lock.
     const QMutexLocker locker(&m_mutex);
     return m_settings.value(keyFor(kLaunchHistoryGroup, path), 0).toInt();
+}
+
+qint64 LaunchHistory::lastLaunchMs(const QString &path) const
+{
+    const QMutexLocker locker(&m_mutex);
+    return m_settings.value(keyFor(kLaunchRecencyGroup, path), 0).toLongLong();
+}
+
+int LaunchHistory::frecencyBoost(const QString &path) const
+{
+    const QMutexLocker locker(&m_mutex);
+    const int count = m_settings.value(keyFor(kLaunchHistoryGroup, path), 0).toInt();
+    if (count == 0)
+        return 0;
+    const qint64 last = m_settings.value(keyFor(kLaunchRecencyGroup, path), 0).toLongLong();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 ageMs = last > 0 ? (now - last) : (30LL * 86400000LL);
+    double recency = 1.0;
+    const double days = ageMs / 86400000.0;
+    if (days < 1.0)
+        recency = 1.0;
+    else if (days < 7.0)
+        recency = 0.7;
+    else if (days < 30.0)
+        recency = 0.4;
+    else
+        recency = 0.2;
+    // Keep boost < tier gap (200) so tier order is preserved
+    const int base = qMin(count * 8, 60);
+    return int(base * recency);
 }
 
 QString LaunchHistory::normalize(const QString &path) const
