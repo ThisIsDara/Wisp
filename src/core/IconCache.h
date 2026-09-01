@@ -22,9 +22,10 @@
 class IconCache
 {
 public:
-    // D-03: default cap 500 ≈ 8 MB at 64×64×4; configurable for tests
-    // (capacity 0 = cache everything off, no growth).
-    explicit IconCache(int capacity = 500);
+    // D-03: default cap 1500 ≈ 24 MB at 64×64×4; configurable for tests
+    // (capacity 0 = cache everything off, no growth). Raised for
+    // maniac-scroll — keeps every icon from a 1000-file inventory resident.
+    explicit IconCache(int capacity = 1500);
 
     // Cache hit → the stored QImage (implicit sharing → cheap copy), and the
     // key is reordered to MRU. Miss → null QImage (MISS IS NOT CACHED — the

@@ -16,8 +16,8 @@ Window {
     id: root
     title: "wisp — settings"          // a11y / taskbar identity (UI-SPEC Copywriting)
     flags: Qt.Tool | Qt.FramelessWindowHint
-    width: Theme.settingsWindowWidth      // 480
-    height: Theme.settingsWindowHeight    // 360
+    width: Theme.settingsWindowWidth
+    height: Theme.settingsWindowHeight
     color: "transparent"
     visible: false   // resident — the controller shows it (06-03)
 
@@ -109,6 +109,64 @@ Window {
         border.width: 1
         clip: true
 
+        // Drag header — entire top bar drags the frameless window (Qt's
+        // startSystemMove). Close button sits on top so its clicks don't drag.
+        MouseArea {
+            id: dragArea
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: closeBtn.left
+            anchors.rightMargin: Theme.spaceSm
+            height: 32
+            onPressed: (mouse) => root.startSystemMove()
+            // Title inside the drag area so it's not covered
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.settingsPad
+                anchors.top: parent.top
+                anchors.topMargin: 10
+                text: "Settings"
+                font.pixelSize: Theme.fontSizeTitle
+                font.weight: Theme.fontWeightSemibold
+                color: Theme.textPrimary
+            }
+        }
+
+        // X close button — top-right of the surface, frameless window's
+        // only chrome. Hover → surfaceSecondary well, same as row remove.
+        Item {
+            id: closeBtn
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.topMargin: Theme.spaceSm
+            anchors.rightMargin: Theme.spaceSm
+            width: Theme.removeButtonSize
+            height: Theme.removeButtonSize
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.removeButtonRadius
+                color: closeHover.containsMouse ? Theme.surfaceSecondary : "transparent"
+                border.width: 1
+                border.color: closeHover.containsMouse ? Theme.border : "transparent"
+            }
+            Text {
+                anchors.centerIn: parent
+                text: "\uE711" // MDL2 Cancel (X)
+                font.family: "Segoe MDL2 Assets"
+                font.pixelSize: Theme.fontSizeSubtitle
+                color: closeHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+            }
+            MouseArea {
+                id: closeHover
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: {
+                    if (settingsController)
+                        settingsController.close()
+                }
+            }
+        }
+
         // Content column — vertical budget 608 <= 628 (UI-SPEC declared;
         // 07-06: +170 scan section; Phase 8: +96 updates section):
         // 24 pad + 18 header + 12 + 64 + 12 + 88 + 12 + 64 + 12 + 170
@@ -116,17 +174,15 @@ Window {
         // height — no clipping (research OQ1: growth via tokens, not a
         // ScrollView).
         Column {
-            anchors.fill: parent
-            anchors.margins: Theme.settingsPad
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.top: dragArea.bottom
+            anchors.leftMargin: Theme.settingsPad
+            anchors.rightMargin: Theme.settingsPad
+            anchors.bottomMargin: Theme.settingsPad
+            anchors.topMargin: Theme.spaceSm
             spacing: Theme.settingsRowGap
-
-            Text {
-                text: "Settings"
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSizeTitle
-                font.weight: Theme.fontWeightSemibold
-                color: Theme.textPrimary
-            }
 
             // ── Hotkey row (64px) — well click opens the capture dialog ──
             Rectangle {

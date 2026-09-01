@@ -66,7 +66,7 @@ public:
 
     // Instant hide (no close animation — UI-SPEC hard rule 2); the window is
     // hidden, never destroyed (state persists across opens).
-    void close();
+    Q_INVOKABLE void close();
 
     // ── QML surface API (SettingsWindow.qml + ColorDialog.qml, 06-02) ──
     Q_INVOKABLE QString currentHotkey() const;            // HotkeyManager live combo

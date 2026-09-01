@@ -398,6 +398,7 @@ Window {
                 anchors.right: viewSeg.left       // 2026-08-15: leave the top-right for the All|Favorites tab
                 anchors.rightMargin: Theme.spaceMd
                 height: Theme.rowHeight
+                verticalAlignment: TextInput.AlignVCenter
                 placeholderText: "Type to search apps and files…"  // RESEARCH §7 verbatim
                 font.pixelSize: Theme.fontSizeQuery
                 color: Theme.textPrimary
@@ -407,16 +408,29 @@ Window {
                 padding: 0
                 leftPadding: Theme.spaceMd
                 rightPadding: Theme.spaceMd
+                topPadding: 1  // nudge 1px to center between top edge and underline (44 + 2)/2
                 Keys.forwardTo: [shell]   // LAUN-05: shell block sees every key
-                // Lean wiring: the model handles empty/full queries itself; no
-                // debounce — rankers are <5ms per keystroke (D-06). D-12:
-                // one text, two pipelines — apps re-filter instantly, the
-                // file query debounces ~150ms in FileSearch then fills in
-                // quietly (D-13). Typing under an open menu would reorder the
-                // list under it (M-03) — typing dismisses the menu.
+                // Typing debounce — coalesces maniac typing (20ms) so the
+                // model doesn't rebuild on every single keystroke. Empty
+                // query still fires immediately (clear list instantly).
+                Timer {
+                    id: queryDebounce
+                    interval: 20
+                    repeat: false
+                    onTriggered: {
+                        resultsModel.setQuery(searchField.text)
+                        fileSearch.setQuery(searchField.text)
+                    }
+                }
                 onTextChanged: {
                     ctxMenu.closeMenu()
-                    resultsModel.setQuery(text); fileSearch.setQuery(text)
+                    if (text.length === 0) {
+                        queryDebounce.stop()
+                        resultsModel.setQuery(text)
+                        fileSearch.setQuery(text)
+                    } else {
+                        queryDebounce.restart()
+                    }
                 }
             }
 
@@ -542,6 +556,10 @@ Window {
                 focus: false                 // keys live on the shell
                 keyNavigationEnabled: false  // shell owns ↑/↓ — never the view
                 boundsBehavior: Flickable.StopAtBounds
+                cacheBuffer: 3000            // keep ~70 offscreen rows alive — maniac flick stays in cache
+                reuseItems: true             // recycle delegates instead of create/destroy
+                displayMarginBeginning: 1000
+                displayMarginEnd: 1000
                 model: resultsModel
                 delegate: ResultsRow {
                     // 05.1: right-click → shell opens the in-window curation

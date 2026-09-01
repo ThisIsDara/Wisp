@@ -187,27 +187,27 @@ void ResultsModel::buildAppOrder()
         if (r.score > 0)
             scored.append({ Row{ i, false }, r });
     }
-    // Frecency boost: frequency * recency decay, capped < tier gap
-    if (m_frecencyFn) {
+    // Frecency boost: batched map = one lock per query (hot path) vs
+    // per-result QSettings reads. Keeps < tier gap so tier order preserved.
+    QHash<QString, int> frecencyMap;
+    if (m_frecencyMapFn)
+        frecencyMap = m_frecencyMapFn();
+    if (!frecencyMap.isEmpty() || m_frecencyFn) {
         for (auto &s : scored) {
-            const int boost = m_frecencyFn(idOf(m_entries.at(s.first.entryIndex)));
+            const QString id = idOf(m_entries.at(s.first.entryIndex));
+            const int boost = !frecencyMap.isEmpty() ? frecencyMap.value(id, 0)
+                            : (m_frecencyFn ? m_frecencyFn(id) : 0);
             s.second.score += boost;
         }
-        std::sort(scored.begin(), scored.end(), [this](const auto &a, const auto &b) {
-            if (a.second.score != b.second.score)
-                return a.second.score > b.second.score;
-            return m_entries.at(a.first.entryIndex).displayName.toCaseFolded()
-                   < m_entries.at(b.first.entryIndex).displayName.toCaseFolded();
-        });
-    } else {
-        std::sort(scored.begin(), scored.end(), [this](const auto &a, const auto &b) {
-            if (a.second.score != b.second.score)
-                return a.second.score > b.second.score; // D-04 rank desc
-            // D-05: alphabetical tie-break — stable and predictable
-            return m_entries.at(a.first.entryIndex).displayName.toCaseFolded()
-                   < m_entries.at(b.first.entryIndex).displayName.toCaseFolded();
-        });
     }
+    std::sort(scored.begin(), scored.end(), [this](const auto &a, const auto &b) {
+        if (a.second.score != b.second.score)
+            return a.second.score > b.second.score;
+        return m_entries.at(a.first.entryIndex).displayName.toCaseFolded()
+               < m_entries.at(b.first.entryIndex).displayName.toCaseFolded();
+    });
+    if (scored.size() > kMaxDisplayRows)
+        scored.resize(kMaxDisplayRows);
     m_order.reserve(scored.size() + 1);
     m_ranges.reserve(scored.size() + 1);
     // Calculator synthetic row: top of list when query is math
@@ -271,6 +271,25 @@ void ResultsModel::mergeFiles()
                < entryAt(b.row).displayName.toCaseFolded();
     });
 
+    // Cap the merged list — maniac typing on "Steam" with 1000 file rows
+    // would otherwise rebuild 1000 delegates per keystroke.
+    if (merged.size() > kMaxDisplayRows) {
+        // Keep all app rows (they're at most ~500) and trim file tail
+        std::nth_element(merged.begin(), merged.begin() + kMaxDisplayRows, merged.end(),
+                         [this](const Candidate &a, const Candidate &b) {
+                             if (a.result.score != b.result.score)
+                                 return a.result.score > b.result.score;
+                             return entryAt(a.row).displayName.toCaseFolded()
+                                    < entryAt(b.row).displayName.toCaseFolded();
+                         });
+        merged.resize(kMaxDisplayRows);
+        std::sort(merged.begin(), merged.end(), [this](const Candidate &a, const Candidate &b) {
+            if (a.result.score != b.result.score)
+                return a.result.score > b.result.score;
+            return entryAt(a.row).displayName.toCaseFolded()
+                   < entryAt(b.row).displayName.toCaseFolded();
+        });
+    }
     // D-03: keep the highest-scored kMaxFileRows file rows (they are the file
     // rows encountered first in the sorted union). Apps are never dropped.
     m_order.clear();
@@ -687,6 +706,11 @@ void ResultsModel::setFavoriteIds(const QSet<QString> &ids)
 void ResultsModel::setFrecencyFn(FrecencyFn fn)
 {
     m_frecencyFn = std::move(fn);
+}
+
+void ResultsModel::setFrecencyMapFn(FrecencyMapFn fn)
+{
+    m_frecencyMapFn = std::move(fn);
 }
 
 QString ResultsModel::calculatorResult() const

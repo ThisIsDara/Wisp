@@ -1,4 +1,5 @@
 #pragma once
+#include <QHash>
 #include <QMutex>
 #include <QSettings>
 #include <QVector>
@@ -49,6 +50,9 @@ public:
     // Frecency boost: frequency * recency decay, capped < kTierGap (200) so
     // tier order is preserved. 0 if never launched.
     int frecencyBoost(const QString &path) const;
+    // Batch version — builds all boosts in ONE lock + one allKeys scan.
+    // Called once per query instead of per-result (hot path).
+    QHash<QString, int> allFrecencyBoosts() const;
 
 private:
     QString normalize(const QString &path) const; // QDir::toNativeSeparators
@@ -60,5 +64,8 @@ private:
     // instance (its cache/map layers are unlocked member state), so every
     // access is serialized under this mutex. mutable: the reader path is const.
     mutable QMutex m_mutex;
+    mutable QHash<QString, int> m_boostCache;
+    mutable qint64 m_boostCacheMs = 0;
+    mutable bool m_boostDirty = true;
     QSettings m_settings; // non-copyable member (QSettings) — class is move-less by design
 };

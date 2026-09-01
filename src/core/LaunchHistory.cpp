@@ -66,6 +66,7 @@ void LaunchHistory::recordLaunch(const AppEntry &entry)
     // Frecency: also stamp last-launch time
     m_settings.setValue(keyFor(kLaunchRecencyGroup, entry.targetPath),
                         QDateTime::currentMSecsSinceEpoch());
+    m_boostDirty = true;
     m_settings.sync();
 }
 
@@ -166,6 +167,52 @@ int LaunchHistory::frecencyBoost(const QString &path) const
     // Keep boost < tier gap (200) so tier order is preserved
     const int base = qMin(count * 8, 60);
     return int(base * recency);
+}
+
+QHash<QString, int> LaunchHistory::allFrecencyBoosts() const
+{
+    const QMutexLocker locker(&m_mutex);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    // Cache for 2s — typing bursts reuse the same map without re-scanning INI.
+    if (!m_boostDirty && (now - m_boostCacheMs) < 2000 && !m_boostCache.isEmpty())
+        return m_boostCache;
+
+    const QString historyPrefix = kLaunchHistoryGroup + QLatin1Char('/');
+    const QString recencyPrefix = kLaunchRecencyGroup + QLatin1Char('/');
+    const QStringList keys = m_settings.allKeys();
+
+    // Collect counts first
+    QHash<QString, int> counts;
+    QHash<QString, qint64> recency;
+    for (const QString &k : keys) {
+        if (k.startsWith(historyPrefix))
+            counts.insert(k.mid(historyPrefix.size()), m_settings.value(k).toInt());
+        else if (k.startsWith(recencyPrefix))
+            recency.insert(k.mid(recencyPrefix.size()), m_settings.value(k).toLongLong());
+    }
+
+    QHash<QString, int> out;
+    out.reserve(counts.size());
+    for (auto it = counts.constBegin(); it != counts.constEnd(); ++it) {
+        const int count = it.value();
+        if (count == 0)
+            continue;
+        const qint64 last = recency.value(it.key(), 0);
+        const qint64 ageMs = last > 0 ? (now - last) : (30LL * 86400000LL);
+        const double days = ageMs / 86400000.0;
+        double r = 0.2;
+        if (days < 1.0)
+            r = 1.0;
+        else if (days < 7.0)
+            r = 0.7;
+        else if (days < 30.0)
+            r = 0.4;
+        out.insert(it.key(), int(qMin(count * 8, 60) * r));
+    }
+    m_boostCache = out;
+    m_boostCacheMs = now;
+    m_boostDirty = false;
+    return out;
 }
 
 QString LaunchHistory::normalize(const QString &path) const

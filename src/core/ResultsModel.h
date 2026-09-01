@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QSet>
 #include <QVector>
 
@@ -110,8 +111,10 @@ public:
     void setFavoriteIds(const QSet<QString> &ids); // seed persisted favorites at startup
 
     // ── Frecency (count + recency) — LaunchHistory-backed ──
-    using FrecencyFn = std::function<int(const QString &id)>;
+    using FrecencyFn = std::function<int(const QString &id)>; // legacy per-id
+    using FrecencyMapFn = std::function<QHash<QString, int>()>; // batched (hot path)
     void setFrecencyFn(FrecencyFn fn);
+    void setFrecencyMapFn(FrecencyMapFn fn);
     QString calculatorResult() const;
 
     // ── Phase-4 file results (04-04): D-01..D-07, D-14, D-15 ──
@@ -181,12 +184,12 @@ private:
     bool m_favoritesOnly = false;  // 2026-08-15: "Favorites" tab mode
     QSet<QString> m_favoriteIds;   // 2026-08-15: favorite ids (targetPath/aumid) — survives rebuilds
     FavoriteStore m_favoriteStore; // 2026-08-15: persistence seam (FavoritesStore in production, spies in tests)
-    FrecencyFn m_frecencyFn;     // frecency boost — LaunchHistory-backed
+    FrecencyFn m_frecencyFn;     // legacy per-id (fallback)
+    FrecencyMapFn m_frecencyMapFn; // batched — one lock per query (hot path)
     AppEntry m_calcEntry;        // synthetic calculator row (when query is math)
     bool m_hasCalc = false;
     static constexpr int kVisibleRows = 7;   // 640×400 shell ≈ 7 rows of 44px (UI-SPEC geometry)
-    static constexpr int kMaxFileRows = 1000; // 07-06: file rows ARE the list; the index
-                                             // pipeline caps candidates at 1000 upstream,
-                                             // so this cap is effectively off
+    static constexpr int kMaxFileRows = 100; // cap file rows in the merged list
+    static constexpr int kMaxDisplayRows = 80; // total rows shown — caps delegate work
     static constexpr int kPathMatchScore = 100; // D-07 base tier below every name match
 };

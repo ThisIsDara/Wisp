@@ -420,6 +420,11 @@ void SettingsWindow::openColorDialog()
 
 bool SettingsWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == m_window && event->type() == QEvent::Close) {
+        event->ignore();
+        close();
+        return true;
+    }
     // Esc → close (D-02 dismissal; QML surface has no key handler — the
     // controller owns it per 06-02 contract).
     if (watched == m_window && event->type() == QEvent::KeyPress) {
@@ -465,23 +470,8 @@ QQuickWindow *SettingsWindow::ensureWindow()
 
     m_window->installEventFilter(this); // Esc → close()
 
-    // Click-away (D-02.4 pattern): deactivation starts the 150ms grace;
-    // re-activation of the settings window itself cancels it. The grace
-    // arms ONLY after the first activation (2026-08-12 open-race fix): the
-    // show → tray-menu-close/focus-handoff sequence can produce a transient
-    // activeChanged(false) before the window ever activates — arming the
-    // timer there closes a freshly opened window 150ms later. Before the
-    // first activation, a deactivation is just the open race: ignore it.
-    connect(m_window, &QQuickWindow::activeChanged, this, [this] {
-        if (!m_window)
-            return;
-        if (m_window->isActive()) {
-            m_hasBeenActive = true;
-            m_graceTimer->stop();
-        } else if (m_hasBeenActive) {
-            startGraceTimer();
-        }
-    });
+    // Normal window: no click-away auto-close. X is handled in
+    // eventFilter (QEvent::Close) — hide instead of destroying.
 
     // 120ms fade-in on open (Theme.animFade; UI-SPEC Animation contract).
     m_fade = new QPropertyAnimation(m_window, "opacity", this);

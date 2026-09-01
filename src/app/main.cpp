@@ -188,8 +188,10 @@ int main(int argc, char *argv[])
     });
     resultsModel.setFavoriteIds(favoritesStore.favoriteIds());
     // Frecency: history-backed boost (< tier gap, so tier order preserved)
-    resultsModel.setFrecencyFn([&history](const QString &id) {
-        return history.frecencyBoost(id);
+    // Batched map = one lock + one allKeys scan per query (hot path) vs
+    // per-result QSettings reads.
+    resultsModel.setFrecencyMapFn([&history] {
+        return history.allFrecencyBoosts();
     });
     // D-14: the default-list escape hatch — addedExecutables ONLY (never
     // launch history): manual picks join the empty-query list, launched
