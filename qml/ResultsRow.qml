@@ -82,17 +82,17 @@ Item {
     }
 
     // Real icon layer (D-01/D-02/D-04, 05-04 contract): image://wispicons/{id}
-    // served by the provider on Qt's dedicated provider thread. cache: false
-    // is MANDATORY — QPixmapCache double-caching would unboundedly defeat the
-    // IconCache LRU (research Pitfall 2). encodeURIComponent is the locked
-    // id round-trip (Pitfall 4; provider decodes defensively, T-05-19).
+    // served by the provider on Qt's dedicated provider thread. cache: true
+    // (2026-09-01 user override of 05-05) — the rendered 32px pixmap stays in
+    // the pixmap cache keyed by URL, so delegate recreation on list updates
+    // never re-requests the provider; the icon is extracted once and reused.
     Image {
         id: iconImg
         anchors.fill: monogram             // 32px slot (D-01)
         source: "image://wispicons/" + encodeURIComponent(model.iconKey)
         sourceSize: Qt.size(Theme.iconSize, Theme.iconSize)
         asynchronous: true
-        cache: false
+        cache: true
         fillMode: Image.PreserveAspectFit
         smooth: true
         visible: status === Image.Ready

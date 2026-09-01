@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QFutureWatcher>
 #include <QHash>
 #include <QSet>
 #include <QVector>
@@ -9,6 +10,9 @@
 
 #include "core/AppEntry.h"
 #include "core/FuzzyMatcher.h"
+#include "core/SearchProvider.h"
+
+class QThreadPool;
 
 // QML consumes this via a context property in 03-05. Rendered rows are the
 // permutation m_order over the always-alphabetical m_entries.
@@ -56,6 +60,8 @@ public:
     // alphabetically (D-01), selection index 0 (D-02).
     Q_INVOKABLE void setQuery(const QString &query);
     QString query() const; // for the 03-05 "No results for \"{query}\"" interpolation
+    void setPool(QThreadPool *pool);
+    void setProviders(const QVector<SearchProvider*> &providers);
 
     int rowCount(const QModelIndex &parent = {}) const override;
     QVariant data(const QModelIndex &idx, int role) const override;
@@ -146,9 +152,11 @@ signals:
 private:
     // Display row: resolved by data()/snapshotSelected() against m_entries
     // (fromFiles == fromAdded == false), m_fileEntries (fromFiles == true),
-    // or m_addedEntries (fromAdded == true — the D-14 default-list channel).
-    // Calculator rows are ephemeral synthetic entries (isCalculator == true).
-    struct Row { int entryIndex; bool fromFiles; bool fromAdded = false; bool isCalculator = false; };
+    // m_addedEntries (fromAdded == true — the D-14 default-list channel), or
+    // m_providerEntries (fromProvider == true — Phase-10 provider results,
+    // each carrying its own AppEntry). Calculator rows are ephemeral synthetic
+    // entries (isCalculator == true).
+    struct Row { int entryIndex; bool fromFiles; bool fromAdded = false; bool fromProvider = false; bool isCalculator = false; };
     const AppEntry &entryAt(const Row &row) const;
 
     // App-only filter+rank (the 03-05 loop verbatim) filling m_order/m_ranges;
@@ -166,6 +174,8 @@ private:
     void filterFavorites();
 
     QVector<AppEntry> m_entries;       // always sorted alphabetically (case-insensitive)
+    QVector<QString> m_entriesLower;   // lowercased displayName cache for fast scoring
+    QVector<QVector<char>> m_entriesBoundaries; // isBoundary per char (precomputed)
     QVector<AppEntry> m_fileEntries;   // latest accepted file set (D-15 generation-guarded)
     QVector<AppEntry> m_addedEntries;  // D-14 default-list channel: latest accepted
                                        // added-only snapshot (manual picks, CUR-04),
@@ -188,8 +198,34 @@ private:
     FrecencyMapFn m_frecencyMapFn; // batched — one lock per query (hot path)
     AppEntry m_calcEntry;        // synthetic calculator row (when query is math)
     bool m_hasCalc = false;
+    // Async scoring — null pool = synchronous (tests)
+    struct AppResult {
+        quint64 gen = 0;
+        QString query;
+        QVector<Row> order;
+        QVector<FuzzyMatcher::Result> ranges;
+        AppEntry calcEntry;
+        bool hasCalc = false;
+    };
+    void applyAppResult(const AppResult &r);
+    // Phase-10 provider fan-out: one future per provider, merged on the UI
+    // thread. Each ScoredEntry carries its OWN AppEntry (no internal index).
+    struct ProviderResult {
+        quint64 gen = 0;
+        QString query;
+        QVector<ScoredEntry> rows;
+    };
+    void applyProviderResult(const ProviderResult &r);
+    void dispatchProviderQuery();
+    QFutureWatcher<ProviderResult> m_providerWatcher;
+    QVector<ScoredEntry> m_providerRows; // latest accepted provider rows (gen-guarded)
+    QVector<SearchProvider*> m_providers;
+    QThreadPool *m_pool = nullptr;
+    QFutureWatcher<AppResult> m_watcher;
+    quint64 m_appGen = 0;
     static constexpr int kVisibleRows = 7;   // 640×400 shell ≈ 7 rows of 44px (UI-SPEC geometry)
     static constexpr int kMaxFileRows = 100; // cap file rows in the merged list
     static constexpr int kMaxDisplayRows = 80; // total rows shown — caps delegate work
     static constexpr int kPathMatchScore = 100; // D-07 base tier below every name match
+    static constexpr int kDefaultListCap = 1000; // empty-query default list breadth (FileIndex::kCandidateCap)
 };

@@ -2,10 +2,13 @@
 #include "core/Calculator.h"
 
 #include <QClipboard>
+#include <QDebug>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QHash>
 #include <QSet>
+#include <QtConcurrent>
 
 namespace {
 
@@ -16,11 +19,205 @@ QString idOf(const AppEntry &e)
     return e.targetPath.isEmpty() ? e.aumid : e.targetPath;
 }
 
+// Fast scoring using precomputed lower + boundaries (hot path — avoids
+// per-entry toLower/toCaseFolded and isBoundary recompute).
+inline FuzzyMatcher::Result scoreFast(const QString &queryLower,
+                                      const QString &targetLower,
+                                      const QVector<char> &boundaries)
+{
+    FuzzyMatcher::Result none;
+    const int qLen = queryLower.size();
+    const int nLen = targetLower.size();
+    if (qLen == 0 || qLen > nLen)
+        return none;
+    // Prefix check (exact/prefix tier)
+    bool starts = true;
+    for (int i = 0; i < qLen; ++i) {
+        if (queryLower.at(i) != targetLower.at(i)) { starts = false; break; }
+    }
+    if (starts) {
+        int b = 0;
+        for (int i = 0; i < qLen; ++i) if (boundaries.at(i)) ++b;
+        FuzzyMatcher::Result r;
+        const int tier = (qLen == nLen ? 1000 : 800);
+        int bonus = qLen * 1 + b * 2 + 1;
+        if (bonus > 199) bonus = 199;
+        r.score = tier + bonus;
+        r.ranges = {{0, qLen}};
+        return r;
+    }
+    // General subsequence — first char prefers boundary
+    int first = -1;
+    for (int j = 0; j < nLen; ++j) {
+        if (queryLower.at(0) == targetLower.at(j) && boundaries.at(j)) { first = j; break; }
+    }
+    if (first < 0) {
+        for (int j = 0; j < nLen; ++j) if (queryLower.at(0) == targetLower.at(j)) { first = j; break; }
+    }
+    if (first < 0) return none;
+    QVector<int> pos; pos.reserve(qLen); pos.append(first);
+    int prev = first;
+    for (int i = 1; i < qLen; ++i) {
+        int j = prev + 1;
+        while (j < nLen && queryLower.at(i) != targetLower.at(j)) ++j;
+        if (j >= nLen) return none;
+        pos.append(j); prev = j;
+    }
+    int boundariesHit = 0;
+    for (int p : pos) if (boundaries.at(p)) ++boundariesHit;
+    // Merge runs
+    FuzzyMatcher::Result r;
+    int runStart = pos.first(), runEnd = runStart, runs = 1;
+    for (int i = 1; i < pos.size(); ++i) {
+        if (pos.at(i) == runEnd + 1) runEnd = pos.at(i);
+        else { r.ranges.append({runStart, runEnd - runStart + 1}); runStart = pos.at(i); runEnd = runStart; ++runs; }
+    }
+    r.ranges.append({runStart, runEnd - runStart + 1});
+    const int tier = boundaries.at(pos.first()) ? 600 : 400;
+    int bonus = int(pos.size()) * 1 + boundariesHit * 2 + (runs == 1 ? 1 : 0);
+    if (bonus > 199) bonus = 199;
+    r.score = tier + bonus;
+    return r;
+}
+
 } // namespace
 
 ResultsModel::ResultsModel(QObject *parent)
     : QAbstractListModel(parent)
 {
+    connect(&m_watcher, &QFutureWatcher<AppResult>::finished, this, [this] {
+        const AppResult r = m_watcher.result();
+        if (r.gen != m_appGen) return;
+        if (r.query != m_query) return;
+        applyAppResult(r);
+    });
+    connect(&m_providerWatcher, &QFutureWatcher<ProviderResult>::finished, this, [this] {
+        const ProviderResult r = m_providerWatcher.result();
+        if (r.gen != m_appGen) return;
+        if (r.query != m_query) return;
+        applyProviderResult(r);
+    });
+}
+
+void ResultsModel::applyAppResult(const AppResult &r)
+{
+    const bool oldHasCalc = m_hasCalc;
+    const QString oldCalc = m_hasCalc ? m_calcEntry.targetPath : QString();
+    const int oldSelected = m_selected;
+    beginResetModel();
+    m_order = r.order;
+    m_ranges = r.ranges;
+    m_calcEntry = r.calcEntry;
+    m_hasCalc = r.hasCalc;
+    // Merge file rows that arrived while worker ran (in m_fileEntries)
+    if (!m_query.isEmpty() && !m_fileEntries.isEmpty())
+        mergeFiles();
+    else if (m_hasCalc != oldHasCalc || (m_hasCalc && m_calcEntry.targetPath != oldCalc))
+        emit calculatorResultChanged();
+    m_selected = 0;
+    endResetModel();
+    if (oldSelected != 0) emit selectionChanged();
+    if (m_hasCalc != oldHasCalc || (m_hasCalc && m_calcEntry.targetPath != oldCalc))
+        emit calculatorResultChanged();
+}
+
+void ResultsModel::setPool(QThreadPool *pool) { m_pool = pool; }
+
+void ResultsModel::applyProviderResult(const ProviderResult &r)
+{
+    const bool oldHasCalc = m_hasCalc;
+    const QString oldCalc = m_hasCalc ? m_calcEntry.targetPath : QString();
+    const int oldSelected = m_selected;
+    m_providerRows = r.rows;
+    // Build the display order first, then decide whether a reset is needed.
+    // Settled queries re-deliver IDENTICAL rows (debounce re-fire, backspace
+    // restoring a previous list) — an unconditional beginResetModel would
+    // rebuild every delegate for no visible change (the "steam" jank).
+    QVector<Row> newOrder;
+    QVector<FuzzyMatcher::Result> newRanges;
+    AppEntry newCalc;
+    bool newHasCalc = false;
+    newOrder.reserve(r.rows.size());
+    newRanges.reserve(r.rows.size());
+    for (int i = 0; i < r.rows.size(); ++i) {
+        const ScoredEntry &se = r.rows.at(i);
+        const bool isCalc = se.entry.source == AppEntry::Source::Calculator;
+        // CUR-03: hidden rows render only in show-hidden mode. The favorites
+        // override (favorited-but-hidden row stays, 2026-08-17) applies too.
+        if (se.entry.hidden && !m_showHidden
+            && !(m_favoritesOnly && m_favoriteIds.contains(idOf(se.entry))))
+            continue;
+        // 2026-08-15: Favorites tab prunes to favorite rows; the calculator
+        // row is always shown (it was always treated as favorite).
+        if (m_favoritesOnly && !isCalc && !m_favoriteIds.contains(idOf(se.entry)))
+            continue;
+        newOrder.append(Row{i, false, false, true, isCalc});
+        newRanges.append(se.match);
+        if (isCalc) {
+            newCalc = se.entry;
+            newHasCalc = true;
+        }
+    }
+    // No-op guard: identical display rows → nothing to repaint. Also emit the
+    // calculator signal even when rows are unchanged (a "1+1" re-query may
+    // recompute the same value — the footer text needs the poke).
+    bool sameRows = (newOrder.size() == m_order.size());
+    if (sameRows) {
+        for (int i = 0; i < newOrder.size(); ++i) {
+            const Row &a = newOrder.at(i);
+            const Row &b = m_order.at(i);
+            if (a.entryIndex != b.entryIndex || a.fromFiles != b.fromFiles
+                || a.fromAdded != b.fromAdded || a.fromProvider != b.fromProvider
+                || a.isCalculator != b.isCalculator) {
+                sameRows = false;
+                break;
+            }
+        }
+    }
+    if (sameRows) {
+        m_calcEntry = std::move(newCalc);
+        m_hasCalc = newHasCalc;
+    } else {
+        // Progressive display (10-03): apply the first block with a single
+        // small reset (instant visual feedback), then append the rest with
+        // incremental inserts. A full beginResetModel over the whole list tears
+        // down every visible delegate just to reveal rows below the fold — the
+        // inserts keep the front block's delegates alive and untouched.
+        constexpr int kInstantRows = 8;
+        const int front = qMin<int>(newOrder.size(), kInstantRows);
+        beginResetModel();
+        m_order.clear();
+        m_ranges.clear();
+        m_order.reserve(newOrder.size());
+        m_ranges.reserve(newOrder.size());
+        for (int i = 0; i < front; ++i) {
+            m_order.append(newOrder.at(i));
+            m_ranges.append(newRanges.at(i));
+        }
+        m_calcEntry = std::move(newCalc);
+        m_hasCalc = newHasCalc;
+        m_selected = 0;
+        endResetModel();
+        int idx = front;
+        while (idx < newOrder.size()) {
+            const int chunkEnd = qMin(idx + 20, newOrder.size());
+            beginInsertRows(QModelIndex(), m_order.size(),
+                            m_order.size() + (chunkEnd - idx) - 1);
+            for (; idx < chunkEnd; ++idx) {
+                m_order.append(newOrder.at(idx));
+                m_ranges.append(newRanges.at(idx));
+            }
+            endInsertRows();
+        }
+    }
+    if (oldSelected != 0 && !sameRows) emit selectionChanged();
+    if (m_hasCalc != oldHasCalc || (m_hasCalc && m_calcEntry.targetPath != oldCalc))
+        emit calculatorResultChanged();
+}
+
+void ResultsModel::setProviders(const QVector<SearchProvider*> &providers)
+{
+    m_providers = providers;
 }
 
 QHash<int, QByteArray> ResultsModel::roleNames() const
@@ -59,6 +256,29 @@ void ResultsModel::setEntries(QVector<AppEntry> entries)
         return a.displayName.toCaseFolded() < b.displayName.toCaseFolded();
     });
     m_entries = std::move(entries);
+    // Precompute lowercased names + boundary flags for fast scoring (hot path)
+    m_entriesLower.resize(m_entries.size());
+    m_entriesBoundaries.resize(m_entries.size());
+    for (int i = 0; i < m_entries.size(); ++i) {
+        const QString &name = m_entries.at(i).displayName;
+        const QString lower = name.toLower();
+        m_entriesLower[i] = lower;
+        QVector<char> b(lower.size());
+        for (int j = 0; j < lower.size(); ++j) {
+            bool isB = false;
+            if (j == 0) isB = true;
+            else {
+                const QChar prev = name.at(j - 1);
+                if (prev.isSpace() || prev == QLatin1Char('-') || prev == QLatin1Char('_')
+                    || prev == QLatin1Char('/') || prev == QLatin1Char('.'))
+                    isB = true;
+                else if (prev.isLower() && name.at(j).isUpper())
+                    isB = true;
+            }
+            b[j] = isB ? 1 : 0;
+        }
+        m_entriesBoundaries[i] = std::move(b);
+    }
 
     m_order.clear();
     m_order.reserve(m_entries.size());
@@ -97,24 +317,153 @@ void ResultsModel::setEntries(QVector<AppEntry> entries)
     emit hiddenCountChanged(); // 05.1: fresh catalog → hidden flags re-marked
 }
 
+void ResultsModel::dispatchProviderQuery()
+{
+    const quint64 gen = ++m_appGen;
+    const QString q = m_query;
+    const QVector<SearchProvider*> providers = m_providers;
+    QThreadPool *pool = m_pool ? m_pool : QThreadPool::globalInstance();
+    auto worker = [gen, q, providers]() {
+        ProviderResult out;
+        out.gen = gen;
+        out.query = q;
+        // Empty query = the full default inventory (breadth matches the old
+        // sync buildAppOrder, capped at kCandidateCap). Typed queries stay
+        // capped so the worker merges fast.
+        const bool emptyQuery = q.trimmed().isEmpty();
+        const int perProvider = emptyQuery ? kDefaultListCap : qMin(qMax(kMaxDisplayRows, 40), 80);
+        for (SearchProvider *p : providers) {
+            auto rows = p->query(q, perProvider, false);
+            for (auto &r : rows)
+                out.rows.append(std::move(r));
+        }
+        std::sort(out.rows.begin(), out.rows.end(), [](const ScoredEntry &a, const ScoredEntry &b){
+            if (a.totalScore != b.totalScore) return a.totalScore > b.totalScore;
+            return a.entry.displayName.toCaseFolded() < b.entry.displayName.toCaseFolded();
+        });
+        if (!emptyQuery && out.rows.size() > kMaxDisplayRows) out.rows.resize(kMaxDisplayRows);
+        return out;
+    };
+    m_providerWatcher.setFuture(QtConcurrent::run(pool, worker));
+}
+
 void ResultsModel::setQuery(const QString &query)
 {
     if (query == m_query)
-        return; // file arrival never depends on this — setFileResults recomputes
-
-    const int oldSelected = m_selected;
-    beginResetModel();
+        return;
     m_query = query;
-
-    buildAppOrder();
-    if (!query.isEmpty())
-        mergeFiles(); // D-01: file rows join the ranked list only on a live query
-
-    m_selected = 0; // D-02: first row selected after every query change
-    endResetModel();
     emit queryChanged(m_query);
-    if (oldSelected != 0)
-        emit selectionChanged(); // re-sync the QML ListView binding
+
+    // Synchronous path only for tests (no pool). The empty default list is
+    // NOT cheap when providers are wired: the full inventory (up to
+    // kCandidateCap) rebuilds on every open / backspace-to-empty / scan —
+    // building + sorting + reseting on the UI thread pinned the frame. With
+    // providers, the same work runs off-thread (dispatchProviderQuery) and the
+    // progressive display keeps the first block instant.
+    if (!m_pool) {
+        QElapsedTimer t; t.start();
+        const int oldSelected = m_selected;
+        beginResetModel();
+        buildAppOrder();
+        if (!query.isEmpty())
+            mergeFiles();
+        m_selected = 0;
+        endResetModel();
+        if (t.elapsed() > 8) qDebug() << "setQuery sync" << query << t.elapsed() << "ms ->" << m_order.size() << "rows";
+        if (oldSelected != 0)
+            emit selectionChanged();
+        return;
+    }
+
+    // ── Phase-10 provider path: parallel fan-out, merged on the UI thread ──
+    if (!m_providers.isEmpty()) {
+        dispatchProviderQuery();
+        return;
+    }
+
+    // Async scoring — off the UI thread so typing never blocks the frame.
+    // Captures are copies (no UI-thread access inside worker).
+    const quint64 gen = ++m_appGen;
+    const QString q = query;
+    const QVector<AppEntry> entries = m_entries;
+    const QVector<QString> lowers = m_entriesLower;
+    const QVector<QVector<char>> bounds = m_entriesBoundaries;
+    const QVector<AppEntry> added = m_addedEntries;
+    const QSet<QString> favIds = m_favoriteIds;
+    const bool showHidden = m_showHidden;
+    const bool favOnly = m_favoritesOnly;
+    const QHash<QString, int> frecencyMap = m_frecencyMapFn ? m_frecencyMapFn() : QHash<QString, int>();
+
+    auto worker = [gen, q, entries, lowers, bounds, added, favIds, showHidden, favOnly, frecencyMap]() -> AppResult {
+        AppResult out;
+        out.gen = gen;
+        out.query = q;
+        // Score apps using fast precomputed path
+        QVector<QPair<Row, FuzzyMatcher::Result>> scored;
+        scored.reserve(entries.size());
+        const QString qLower = q.trimmed().toLower();
+        const int minTier = (qLower.size() == 1) ? 800 : (qLower.size() == 2 ? 600 : 0);
+        for (int i = 0; i < entries.size(); ++i) {
+            if (entries.at(i).hidden && !showHidden) {
+                const QString id = entries.at(i).targetPath.isEmpty() ? entries.at(i).aumid : entries.at(i).targetPath;
+                if (!(favOnly && favIds.contains(id))) continue;
+            }
+            FuzzyMatcher::Result r;
+            if (i < lowers.size() && i < bounds.size())
+                r = scoreFast(qLower, lowers.at(i), bounds.at(i));
+            else
+                r = FuzzyMatcher::score(q, entries.at(i).displayName);
+            if (r.score > 0 && r.score < minTier) continue;
+            if (r.score > 0) {
+                const QString id = entries.at(i).targetPath.isEmpty() ? entries.at(i).aumid : entries.at(i).targetPath;
+                int boost = frecencyMap.value(id, 0);
+                r.score += boost;
+                scored.append({Row{i, false, false, false}, r});
+            }
+        }
+        auto cmp2 = [&](const auto &a, const auto &b){
+            if (a.second.score != b.second.score) return a.second.score > b.second.score;
+            return entries.at(a.first.entryIndex).displayName.toCaseFolded() < entries.at(b.first.entryIndex).displayName.toCaseFolded();
+        };
+        int cap2 = ResultsModel::kMaxDisplayRows;
+        if (qLower.size() == 1) cap2 = 30;
+        else if (qLower.size() == 2) cap2 = 40;
+        if (scored.size() > cap2) {
+            std::nth_element(scored.begin(), scored.begin() + cap2, scored.end(), cmp2);
+            scored.resize(cap2);
+            std::sort(scored.begin(), scored.end(), cmp2);
+        } else {
+            std::sort(scored.begin(), scored.end(), cmp2);
+        }
+        if (auto calc = Calculator::evaluate(q)) {
+            out.hasCalc = true;
+            out.calcEntry.source = AppEntry::Source::Calculator;
+            out.calcEntry.displayName = q.trimmed() + QStringLiteral(" = ") + *calc;
+            out.calcEntry.targetPath = *calc;
+            out.order.append(Row{0, false, false, true});
+            out.ranges.append(FuzzyMatcher::Result{2000, {}});
+        }
+        for (auto &s : scored) { out.order.append(s.first); out.ranges.append(s.second); }
+        if (favOnly) {
+            QVector<Row> keep; QVector<FuzzyMatcher::Result> keepR;
+            keep.reserve(out.order.size()); keepR.reserve(out.order.size());
+            for (int i=0;i<out.order.size();++i) {
+                const Row &rw = out.order.at(i);
+                bool isFav = false;
+                if (rw.isCalculator) isFav = true;
+                else {
+                    const AppEntry &e = rw.fromAdded ? added.at(rw.entryIndex) : entries.at(rw.entryIndex);
+                    const QString id = e.targetPath.isEmpty() ? e.aumid : e.targetPath;
+                    isFav = favIds.contains(id);
+                }
+                if (isFav) { keep.append(rw); keepR.append(out.ranges.at(i)); }
+            }
+            out.order = keep; out.ranges = keepR;
+        }
+        return out;
+    };
+
+    m_watcher.setFuture(QtConcurrent::run(m_pool ? m_pool : QThreadPool::globalInstance(), worker));
 }
 
 void ResultsModel::buildAppOrder()
@@ -175,9 +524,16 @@ void ResultsModel::buildAppOrder()
     }
 
     // Filter + rank once here; data() never recomputes (D-06 perf).
+    // Fast path: precomputed lower + boundaries avoids per-entry toLower/toCaseFolded.
+    const QString queryLower = m_query.trimmed().toLower();
+    const int minTier = (queryLower.size() == 1) ? 800 : (queryLower.size() == 2 ? 600 : 0);
     QVector<QPair<Row, FuzzyMatcher::Result>> scored;
     for (int i = 0; i < m_entries.size(); ++i) {
-        const FuzzyMatcher::Result r = FuzzyMatcher::score(m_query, m_entries.at(i).displayName);
+        const FuzzyMatcher::Result r = (i < m_entriesLower.size() && i < m_entriesBoundaries.size())
+                                           ? scoreFast(queryLower, m_entriesLower.at(i), m_entriesBoundaries.at(i))
+                                           : FuzzyMatcher::score(m_query, m_entries.at(i).displayName);
+        if (r.score > 0 && r.score < minTier)
+            continue;
         // 2026-08-17: same Favorites-overrides-hidden rule as the empty-query
         // branch above — a favorited-but-hidden row stays searchable in
         // Favorites mode (search results are all-visible anyway, D-01).
@@ -200,14 +556,22 @@ void ResultsModel::buildAppOrder()
             s.second.score += boost;
         }
     }
-    std::sort(scored.begin(), scored.end(), [this](const auto &a, const auto &b) {
+    auto cmp = [this](const auto &a, const auto &b) {
         if (a.second.score != b.second.score)
             return a.second.score > b.second.score;
         return m_entries.at(a.first.entryIndex).displayName.toCaseFolded()
                < m_entries.at(b.first.entryIndex).displayName.toCaseFolded();
-    });
-    if (scored.size() > kMaxDisplayRows)
-        scored.resize(kMaxDisplayRows);
+    };
+    int cap = kMaxDisplayRows;
+    if (queryLower.size() == 1) cap = 30;
+    else if (queryLower.size() == 2) cap = 40;
+    if (scored.size() > cap) {
+        std::nth_element(scored.begin(), scored.begin() + cap, scored.end(), cmp);
+        scored.resize(cap);
+        std::sort(scored.begin(), scored.end(), cmp);
+    } else {
+        std::sort(scored.begin(), scored.end(), cmp);
+    }
     m_order.reserve(scored.size() + 1);
     m_ranges.reserve(scored.size() + 1);
     // Calculator synthetic row: top of list when query is math
@@ -256,8 +620,15 @@ void ResultsModel::mergeFiles()
             continue; // file rows from an earlier merge — the loop below rebuilds them fresh
         merged.append({ m_order.at(i), m_ranges.at(i) });
     }
+    const QString trimmedQuery = m_query.trimmed();
+    const int fileMinTier = (trimmedQuery.size() == 1) ? 800 : (trimmedQuery.size() == 2 ? 600 : 0);
     for (int i = 0; i < m_fileEntries.size(); ++i) {
-        const FuzzyMatcher::Result r = FuzzyMatcher::score(m_query, m_fileEntries.at(i).displayName);
+        const FuzzyMatcher::Result r = FuzzyMatcher::score(trimmedQuery, m_fileEntries.at(i).displayName);
+        if (r.score > 0 && r.score < fileMinTier)
+            continue;
+        // For short queries, don't show path-only file hits (score 100) — too broad
+        if (r.score == 0 && fileMinTier > 0)
+            continue;
         const int fileScore = r.score > 0 ? r.score : kPathMatchScore;
         merged.append({ Row{ i, true }, FuzzyMatcher::Result{ fileScore, r.ranges } });
     }
@@ -271,18 +642,22 @@ void ResultsModel::mergeFiles()
                < entryAt(b.row).displayName.toCaseFolded();
     });
 
+    // Dynamic cap for broad queries — "S" shouldn't build 80 delegates
+    int mergeCap = kMaxDisplayRows;
+    if (trimmedQuery.size() == 1) mergeCap = 30;
+    else if (trimmedQuery.size() == 2) mergeCap = 40;
     // Cap the merged list — maniac typing on "Steam" with 1000 file rows
     // would otherwise rebuild 1000 delegates per keystroke.
-    if (merged.size() > kMaxDisplayRows) {
+    if (merged.size() > mergeCap) {
         // Keep all app rows (they're at most ~500) and trim file tail
-        std::nth_element(merged.begin(), merged.begin() + kMaxDisplayRows, merged.end(),
+        std::nth_element(merged.begin(), merged.begin() + mergeCap, merged.end(),
                          [this](const Candidate &a, const Candidate &b) {
                              if (a.result.score != b.result.score)
                                  return a.result.score > b.result.score;
                              return entryAt(a.row).displayName.toCaseFolded()
                                     < entryAt(b.row).displayName.toCaseFolded();
                          });
-        merged.resize(kMaxDisplayRows);
+        merged.resize(mergeCap);
         std::sort(merged.begin(), merged.end(), [this](const Candidate &a, const Candidate &b) {
             if (a.result.score != b.result.score)
                 return a.result.score > b.result.score;
@@ -334,6 +709,19 @@ void ResultsModel::setFileResults(quint64 generation, const QString &query,
         });
         m_addedEntries = std::move(files);
 
+        // Phase-10: with providers wired, the DEFAULT list is built off the
+        // UI thread too (dispatchProviderQuery) — the FileSearch snapshot that
+        // lands here is the same index the provider fan-out already queried,
+        // so this branch must NOT beginResetModel a second time (it would
+        // rebuild every delegate for no visible change — the "loads a long
+        // list, lags" jank on open/backspace/scan). Re-dispatch async instead;
+        // the m_pool guard keeps the sync path for tests.
+        if (!m_providers.isEmpty()) {
+            if (m_pool)
+                dispatchProviderQuery();
+            return;
+        }
+
         beginResetModel();
         buildAppOrder();
         // D-02 applies to query changes only: file arrival NEVER resets the
@@ -349,6 +737,14 @@ void ResultsModel::setFileResults(quint64 generation, const QString &query,
         endResetModel();
         return;
     }
+
+    // Phase-10 (providers own typed queries): with providers wired, the
+    // typed-query merge is the provider fan-out's job (applyProviderResult).
+    // FileSearch re-dispatch on a scan completion still needs the index, so
+    // only the EMPTY-query default-list branch above runs; a typed result
+    // delivery here would double-render file rows from both channels.
+    if (!m_providers.isEmpty())
+        return;
 
     m_fileEntries = std::move(files);
 
@@ -491,6 +887,8 @@ const AppEntry &ResultsModel::entryAt(const Row &row) const
 {
     if (row.isCalculator)
         return m_calcEntry;
+    if (row.fromProvider)
+        return m_providerRows.at(row.entryIndex).entry;
     if (row.fromAdded)
         return m_addedEntries.at(row.entryIndex);
     if (row.fromFiles)

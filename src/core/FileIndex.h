@@ -88,6 +88,9 @@ private:
     mutable QMutex m_mutex;
     QVector<IndexEntry> m_entries;
     QHash<QString, qint64> m_dirMtimes; // native-separator path → lastWriteMs
+    // Trigram index: trigram (lower 3-char) -> set of entry indices
+    void rebuildTrigramIndex() const;
+    mutable QHash<QString, QSet<int>> m_trigramIndex;
 
     static constexpr quint32 kMagic = 0x57535031; // ASCII "WSP1"
     // Bumped to 3 (2026-08-15): .lnk files joined the inventory filter — a v2

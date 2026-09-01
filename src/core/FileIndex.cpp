@@ -179,6 +179,24 @@ void FileIndex::walkDir(const QString &dir, int depth, const WinDirectoryWalk::W
     }
 }
 
+void FileIndex::rebuildTrigramIndex() const
+{
+    m_trigramIndex.clear();
+    for (int i = 0; i < m_entries.size(); ++i) {
+        const QString &key = m_entries.at(i).matchKey;
+        if (key.size() < 3) continue;
+        for (int j = 0; j <= key.size() - 3; ++j) {
+            const QString tri = key.mid(j, 3);
+            // Skip trigrams containing path separators or non-alnum for better selectivity
+            if (tri.contains(QLatin1Char('\\')) || tri.contains(QLatin1Char('/'))) continue;
+            bool ok = true;
+            for (QChar c : tri) if (!c.isLetterOrNumber()) { ok = false; break; }
+            if (!ok) continue;
+            m_trigramIndex[tri].insert(i);
+        }
+    }
+}
+
 void FileIndex::apply(const WalkOutcome &outcome)
 {
     const QMutexLocker lock(&m_mutex);
@@ -216,6 +234,7 @@ void FileIndex::apply(const WalkOutcome &outcome)
     m_dirMtimes.clear();
     for (auto it = outcome.mtimes.constBegin(); it != outcome.mtimes.constEnd(); ++it)
         m_dirMtimes.insert(it.key(), it.value());
+    rebuildTrigramIndex();
 }
 
 bool FileIndex::save() const
@@ -288,6 +307,7 @@ bool FileIndex::load()
     const QMutexLocker lock(&m_mutex);
     m_entries = std::move(entries);
     m_dirMtimes = std::move(mtimes);
+    rebuildTrigramIndex();
     return true;
 }
 
@@ -297,6 +317,48 @@ QVector<FileIndex::IndexEntry> FileIndex::queryCandidates(const QString &query) 
     const QMutexLocker lock(&m_mutex);
     QVector<IndexEntry> out;
     out.reserve(kCandidateCap);
+
+    // Trigram prefilter for 3+ char queries — narrows 1000 -> ~50 before subsequence
+    if (folded.size() >= 3 && !m_trigramIndex.isEmpty()) {
+        QSet<int> candidates;
+        bool first = true;
+        bool allFound = true; // every alnum query trigram must exist in the index
+        for (int i = 0; i <= folded.size() - 3; ++i) {
+            const QString tri = folded.mid(i, 3);
+            bool ok = true;
+            for (QChar c : tri) if (!c.isLetterOrNumber()) { ok = false; break; }
+            if (!ok) continue;
+            auto it = m_trigramIndex.constFind(tri);
+            if (it == m_trigramIndex.constEnd()) { allFound = false; break; }
+            if (first) { candidates = *it; first = false; }
+            else {
+                // Intersect
+                QSet<int> next;
+                for (int idx : candidates) if (it->contains(idx)) next.insert(idx);
+                candidates = std::move(next);
+                if (candidates.isEmpty()) break;
+            }
+            if (candidates.size() <= 20) break; // enough selectivity, stop early
+        }
+        // Use the prefiter ONLY when every query trigram matched the index —
+        // otherwise a missing trigram (sparse subsequence match) would return
+        // EMPTY results where the linear scan still finds valid hits. Fall
+        // through to the complete scan below.
+        if (allFound && (!candidates.isEmpty() || first)) {
+            for (int idx : candidates) {
+                if (out.size() >= kCandidateCap) break;
+                const auto &e = m_entries.at(idx);
+                if (e.isFolder) continue;
+                if (query.isEmpty()) { out.append(e); continue; }
+                int qi = 0; const int ql = folded.size();
+                for (int mi = 0; mi < e.matchKey.size() && qi < ql; ++mi)
+                    if (e.matchKey.at(mi) == folded.at(qi)) ++qi;
+                if (qi == ql) out.append(e);
+            }
+            return out;
+        }
+        // Fall through to linear scan when any trigram was absent from the index
+    }
     for (const auto &e : m_entries) {
         // 07-06: executable launcher — folders are index-internal structure
         // (the removal sweep keys off them) but never surface in list/search.

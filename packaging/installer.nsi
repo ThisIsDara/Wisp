@@ -16,11 +16,11 @@ Caption "wisp — app launcher"
 ; --- version metadata (SignPath artifact policy: product name/version) --
 ; BUMP IN LOCKSTEP with CMakeLists project(VERSION ...) every release -
 ; the updater compares WISP_VERSION against the release tag (Phase 8 D-15).
-VIProductVersion "0.1.4.0"
+VIProductVersion "0.1.5.0"
 VIAddVersionKey "ProductName" "wisp"
 VIAddVersionKey "FileDescription" "wisp — app launcher"
-VIAddVersionKey "FileVersion" "0.1.4"
-VIAddVersionKey "ProductVersion" "0.1.4"
+VIAddVersionKey "FileVersion" "0.1.5"
+VIAddVersionKey "ProductVersion" "0.1.5"
 VIAddVersionKey "CompanyName" "ThisIsDara"
 VIAddVersionKey "LegalCopyright" "© 2026 ThisIsDara"
 

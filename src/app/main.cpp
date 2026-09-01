@@ -5,10 +5,13 @@
 #include <QSystemTrayIcon>
 
 #include "core/AppEntry.h"
+#include "core/AppProvider.h"
 #include "core/AutostartManager.h"
+#include "core/CalculatorProvider.h"
 #include "core/CurationStore.h"
 #include "core/FavoritesStore.h"
 #include "core/FileIndex.h"
+#include "core/FileProvider.h"
 #include "core/FileSearch.h"
 #include "core/HotkeyManager.h"
 #include "core/IconCache.h"
@@ -193,6 +196,18 @@ int main(int argc, char *argv[])
     resultsModel.setFrecencyMapFn([&history] {
         return history.allFrecencyBoosts();
     });
+    // ── Phase-10 (provider fan-out): providers own typed-query search. Each
+    // provider owns its index and runs in parallel via QtConcurrent (Results
+    // Model fan-out — never the UI thread). FileSearch keeps the empty/default
+    // list + status + refresh + add-executable.
+    AppProvider appProvider;
+    FileProvider fileProvider;
+    CalculatorProvider calcProvider;
+    fileProvider.setIndex(&index);
+    fileProvider.setAddedSource([&history] { return history.addedExecutables(); });
+    QVector<SearchProvider*> providers = { &appProvider, &fileProvider, &calcProvider };
+    resultsModel.setProviders(providers);
+    resultsModel.setPool(QThreadPool::globalInstance());
     // D-14: the default-list escape hatch — addedExecutables ONLY (never
     // launch history): manual picks join the empty-query list, launched
     // executables don't (CUR-04 intent). Stamped with the curation store so

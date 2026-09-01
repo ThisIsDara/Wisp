@@ -410,16 +410,21 @@ Window {
                 rightPadding: Theme.spaceMd
                 topPadding: 1  // nudge 1px to center between top edge and underline (44 + 2)/2
                 Keys.forwardTo: [shell]   // LAUN-05: shell block sees every key
-                // Typing debounce — coalesces maniac typing (20ms) so the
-                // model doesn't rebuild on every single keystroke. Empty
-                // query still fires immediately (clear list instantly).
+                // Typing debounce — coalesces fast typing (150ms) so the
+                // model's UI-thread reset fires only when the user PAUSES;
+                // a 20ms interval fired between keystrokes, stuttering the
+                // search field on every key. Empty query fires immediately.
+                // Phase-10: TYPED queries dispatch to the provider fan-out
+                // ONLY (resultsModel) — fileSearch keeps the empty default-list
+                // snapshot + status + refresh + add-executable. A duplicate
+                // fileSearch.setQuery here would re-scan the index on a second
+                // worker (redundant + pool/mutex contention with the providers).
                 Timer {
                     id: queryDebounce
-                    interval: 20
+                    interval: 150
                     repeat: false
                     onTriggered: {
                         resultsModel.setQuery(searchField.text)
-                        fileSearch.setQuery(searchField.text)
                     }
                 }
                 onTextChanged: {
@@ -556,10 +561,15 @@ Window {
                 focus: false                 // keys live on the shell
                 keyNavigationEnabled: false  // shell owns ↑/↓ — never the view
                 boundsBehavior: Flickable.StopAtBounds
-                cacheBuffer: 3000            // keep ~70 offscreen rows alive — maniac flick stays in cache
+                // Delegate pool: the empty browse list keeps ~70 rows alive for
+                // maniac flick; SEARCH shrinks the pool hard (only the ~7 visible
+                // rows + a small margin) because every paused keystroke resets the
+                // model and re-lays-out whatever delegates exist — 75 alive = jank
+                // per keystroke, ~10 = nothing (2026-09-01 perf pass).
+                cacheBuffer: resultsModel.query.length > 0 ? 0 : 3000
                 reuseItems: true             // recycle delegates instead of create/destroy
-                displayMarginBeginning: 1000
-                displayMarginEnd: 1000
+                displayMarginBeginning: resultsModel.query.length > 0 ? 0 : 1000
+                displayMarginEnd: resultsModel.query.length > 0 ? 0 : 1000
                 model: resultsModel
                 delegate: ResultsRow {
                     // 05.1: right-click → shell opens the in-window curation
