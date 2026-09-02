@@ -49,7 +49,7 @@ void TstCommand::emptyRemainderInstructionalRow()
     const auto rows = p.query(QStringLiteral("cmd/"), 80, false);
     QCOMPARE(rows.size(), 1);
     QCOMPARE(rows.at(0).entry.source, AppEntry::Source::Command);
-    QCOMPARE(rows.at(0).entry.displayName, QStringLiteral("cmd/ \u2014 type a command"));
+    QCOMPARE(rows.at(0).entry.displayName, QStringLiteral("Command: \"<type a command>\""));
     QVERIFY(rows.at(0).entry.targetPath.isEmpty());
     QCOMPARE(rows.at(0).totalScore, 1000);
 }
@@ -60,7 +60,7 @@ void TstCommand::commandRowStripsPrefix()
     const auto rows = p.query(QStringLiteral("cmd/ipconfig"), 80, false);
     QCOMPARE(rows.size(), 1);
     QCOMPARE(rows.at(0).entry.source, AppEntry::Source::Command);
-    QCOMPARE(rows.at(0).entry.displayName, QStringLiteral("ipconfig"));
+    QCOMPARE(rows.at(0).entry.displayName, QStringLiteral("Command: \"ipconfig\""));
     QCOMPARE(rows.at(0).entry.targetPath, QStringLiteral("ipconfig"));
     QCOMPARE(rows.at(0).totalScore, 2000);
 }
@@ -70,7 +70,7 @@ void TstCommand::commandWithSpaces()
     CommandProvider p;
     const auto rows = p.query(QStringLiteral("cmd/echo hello world"), 80, false);
     QCOMPARE(rows.size(), 1);
-    QCOMPARE(rows.at(0).entry.displayName, QStringLiteral("echo hello world"));
+    QCOMPARE(rows.at(0).entry.displayName, QStringLiteral("Command: \"echo hello world\""));
     QCOMPARE(rows.at(0).entry.targetPath, QStringLiteral("echo hello world"));
 }
 

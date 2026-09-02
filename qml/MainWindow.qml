@@ -143,23 +143,15 @@ Window {
                 break
             case Qt.Key_1: case Qt.Key_2: case Qt.Key_3: case Qt.Key_4: case Qt.Key_5:
             case Qt.Key_6: case Qt.Key_7: case Qt.Key_8: case Qt.Key_9:
-                // Phase-11 Alt+number quick-select (D-04/D-05): Alt+<digit>
-                // launches row (digit-1) ALWAYS — accepted, never reaches the
-                // field. Bare <digit> launches only while a TYPED query is
-                // active (the on-row hints are visible then, D-05); with an
-                // empty query the event is NOT accepted and falls through so
-                // the user can type digits into the query. Mirrors the click
-                // path: launchController.launchIndex freezes the target at
-                // keypress (D-12) and re-selects the row first.
+                // Phase-11 Alt+number quick-select (D-04/D-05): ONLY Alt+<digit>
+                // quick-launches row (digit-1), and it is always accepted so it
+                // never reaches the field. A BARE <digit> is NEVER intercepted
+                // — it must always type into the search field, because digits
+                // are legitimate query input (the calculator "12", "1+1", and
+                // the cmd/ runner "tracert 1.1.1.1" all need them). Bare-digit
+                // quick-select was dropped after it swallowed the second
+                // character of numeric queries (calculator / cmd/ regressions).
                 if (event.modifiers & Qt.AltModifier) {
-                    const idx = event.key - Qt.Key_1
-                    if (idx < resultsView.count) {
-                        resultsView.keyboardActive = true
-                        resultsView.lastKbPressMs = Date.now()
-                        launchController.launchIndex(idx, false)
-                    }
-                    event.accepted = true
-                } else if (!event.isAutoRepeat && resultsModel.query.length > 0) {
                     const idx = event.key - Qt.Key_1
                     if (idx < resultsView.count) {
                         resultsView.keyboardActive = true

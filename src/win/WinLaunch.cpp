@@ -174,20 +174,27 @@ LaunchResult launchCommand(const QString &command)
     if (command.isEmpty())
         return LaunchResult::Failed;
 
+    // D-09: /K (keep) rather than /C — the console must REMAIN OPEN after the
+    // command finishes so the user can read the output (a /C console closes
+    // the instant a fast command exits, which looks like the runner "did
+    // nothing"). /D skips AutoRun.
     const std::wstring lineW =
-        QStringLiteral("cmd.exe /D /C \"%1\"").arg(command).toStdWString();
+        QStringLiteral("cmd.exe /D /K \"%1\"").arg(command).toStdWString();
     const std::wstring dirW =
         QDir::toNativeSeparators(QDir::homePath()).toStdWString();
 
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
-    // lpCommandLine is documented as writable-only; cmd.exe is the app, the
-    // full line carries the quoted command. CREATE_NEW_CONSOLE: the child
-    // runs in its own console window (visible command output — D-09). The
-    // user-profile cwd keeps launched scripts from depending on the
-    // launcher's working directory.
-    const BOOL ok = CreateProcessW(L"cmd.exe", const_cast<wchar_t *>(lineW.c_str()),
+    // PITFALL: lpApplicationName MUST be nullptr (or an absolute path) — a
+    // bare "cmd.exe" name makes CreateProcess skip PATH search and fail with
+    // ERROR_FILE_NOT_FOUND (error 2), so the runner silently did nothing.
+    // With lpApplicationName = nullptr, CreateProcess resolves the first
+    // token of lpCommandLine ("cmd.exe") through System32/PATH. lpCommandLine
+    // is documented as writable-only. CREATE_NEW_CONSOLE: the child runs in
+    // its own console window (visible command output — D-09). The user-profile
+    // cwd keeps launched scripts from depending on the launcher's cwd.
+    const BOOL ok = CreateProcessW(nullptr, const_cast<wchar_t *>(lineW.c_str()),
                                    nullptr, nullptr, FALSE, CREATE_NEW_CONSOLE,
                                    nullptr, dirW.c_str(), &si, &pi);
     if (!ok) {

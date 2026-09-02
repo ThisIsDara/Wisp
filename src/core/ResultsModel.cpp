@@ -128,6 +128,15 @@ void ResultsModel::applyProviderResult(const ProviderResult &r)
     const bool oldHasCalc = m_hasCalc;
     const QString oldCalc = m_hasCalc ? m_calcEntry.targetPath : QString();
     const int oldSelected = m_selected;
+    // Phase-11 cmd/ preview + calculator text: the displayed NAME can change
+    // while the row identity is unchanged (provider slot refills as the query
+    // grows). Snapshot the CURRENT on-screen names BEFORE m_providerRows is
+    // overwritten below, so the no-op guard can tell "same name" from a stale
+    // title (entryAt resolves against the (soon-to-be-new) member rows).
+    QVector<QString> oldNames;
+    oldNames.reserve(m_order.size());
+    for (int i = 0; i < m_order.size(); ++i)
+        oldNames.append(entryAt(m_order.at(i)).displayName);
     m_providerRows = r.rows;
     // Build the display order first, then decide whether a reset is needed.
     // Settled queries re-deliver IDENTICAL rows (debounce re-fire, backspace
@@ -173,6 +182,19 @@ void ResultsModel::applyProviderResult(const ProviderResult &r)
             if (a.entryIndex != b.entryIndex || a.fromFiles != b.fromFiles
                 || a.fromAdded != b.fromAdded || a.fromProvider != b.fromProvider
                 || a.isCalculator != b.isCalculator) {
+                sameRows = false;
+                break;
+            }
+            // Text may change while the row IDENTITY is unchanged — the phase-11
+            // cmd/ preview (Command: "<typed>") and the calculator line both
+            // re-render the SAME provider slot as the query grows. Without this
+            // check the no-op guard skips the repaint and the title goes stale.
+            // NOTE: a calculator row's proposed text comes from newCalc (the
+            // pending result) — entryAt(a) would read the STALE m_calcEntry,
+            // defeating the guard.
+            const QString proposed =
+                a.isCalculator ? newCalc.displayName : entryAt(a).displayName;
+            if (proposed != oldNames.at(i)) {
                 sameRows = false;
                 break;
             }

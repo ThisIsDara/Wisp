@@ -83,14 +83,15 @@ Item {
         Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
         Text {
             anchors.centerIn: parent
-            // Phase-11: iconKey "cmd" (CommandProvider rows) renders a plain
-            // ">" prompt marker in accentLight — no MDL2 font needed. "calc"
-            // keeps the MDL2 calculator glyph (U+E8EF).
-            text: model.iconKey === "calc" ? "\uE8EF"
-                : (model.iconKey === "cmd" ? ">" 
-                   : (model.isFolder ? "\u25B8" : (model.displayName.length > 0 ? model.displayName.charAt(0).toUpperCase() : "")))
-            font.family: model.iconKey === "calc" ? "Segoe MDL2 Assets" : ""
-            font.pixelSize: model.iconKey === "calc" ? 24 : Theme.fontSizeSubtitle
+            // Phase-11: iconKey "calc" uses the MDL2 calculator glyph
+            // (U+E8EF). "cmd" (CommandProvider rows) uses the MDL2
+            // CommandPrompt glyph (U+E756 — the classic terminal window with
+            // the C:\> prompt) in accentLight. Folder rows keep the ▸ marker
+            // glyph (U+25B8); the rest show the displayName initial.
+            text: (model.iconKey === "calc" || model.iconKey === "cmd") ? (model.iconKey === "calc" ? "\uE8EF" : "\uE756")
+                : (model.isFolder ? "\u25B8" : (model.displayName.length > 0 ? model.displayName.charAt(0).toUpperCase() : ""))
+            font.family: (model.iconKey === "calc" || model.iconKey === "cmd") ? "Segoe MDL2 Assets" : ""
+            font.pixelSize: (model.iconKey === "calc" || model.iconKey === "cmd") ? 24 : Theme.fontSizeSubtitle
             font.weight: Theme.fontWeightSemibold
             color: model.iconKey === "calc" ? Theme.appOutline
                  : (model.iconKey === "cmd" || model.isFolder ? Theme.accentLight : Theme.textSecondary)

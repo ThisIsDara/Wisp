@@ -16,17 +16,21 @@ QVector<ScoredEntry> CommandProvider::query(const QString &q, int limit, bool ex
     if (!full.startsWith(QLatin1String("cmd/"), Qt::CaseInsensitive))
         return {};
 
-    const QString cmd = full.mid(4).trimmed();
+const QString cmd = full.mid(4).trimmed();
     AppEntry e;
     e.source = AppEntry::Source::Command;
     if (cmd.isEmpty()) {
-        // Instructional row — targetPath empty so Enter is a quiet no-op
-        // (the LaunchController Command branch guards it).
-        e.displayName = QStringLiteral("cmd/ \u2014 type a command");
+        // Instructional row - targetPath empty so Enter is a quiet no-op
+        // (the LaunchController Command branch guards it). Title previews the
+        // template so the user sees the live format ("Command: "<typed>") as
+        // they keep typing.
+        e.displayName = QStringLiteral("Command: \"<type a command>\"");
         return {{e, FuzzyMatcher::Result{1000, {}}, 1000}};
     }
-    e.displayName = cmd;
+    // Live title mirrors the composed command ("Command: "<typed>") so the
+    // row visibly tracks what is typed after cmd/ (the user-facing preview).
+    e.displayName = QStringLiteral("Command: \"%1\"").arg(cmd);
     e.targetPath = cmd;
-    // 2000 = calc's top tier — the command always beats app/file matches.
+    // 2000 = calc's top tier - the command always beats app/file matches.
     return {{e, FuzzyMatcher::Result{2000, {}}, 2000}};
 }

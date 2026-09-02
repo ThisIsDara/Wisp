@@ -45,15 +45,19 @@ LaunchResult launchUwp(const AppEntry &entry);
 // launcher's cwd). No process handle is taken (SEE_MASK_FLAG_NO_UI only).
 LaunchResult revealInExplorer(const QString &path);
 
-// Phase-11 typed-command runner (D-09): cmd.exe /D /C "<command>" via
+// Phase-11 typed-command runner (D-09): cmd.exe /D /K "<command>" via
 // CreateProcess in a NEW console window. The command is quoted as ONE unit
-// (embedded spaces and && survive); /D skips AutoRun. cwd = the user-profile
-// dir — never the launcher's cwd (WinLaunch cwd discipline, PITFALLS #13
-// analog). Empty command → Failed. No elevation variant (runas deferred —
-// the LaunchController Command branch never requests it). The new console
-// owns the child; the process/thread handles are closed immediately, no wait
-// (D-13 instant path). Known limitation: a literal double-quote inside the
-// command can break cmd's /C "…" parsing (the documented two-quote rule) —
+// (embedded spaces and && survive); /D skips AutoRun and /K KEEPS the console
+// open after the command finishes so the output stays visible (a /C console
+// closes instantly for fast commands and reads as a no-op). lpApplicationName
+// is NULL so the first lpCommandLine token resolves through PATH — a bare
+// name there fails with ERROR_FILE_NOT_FOUND (see WinLaunch.cpp). cwd = the
+// user-profile dir — never the launcher's cwd (WinLaunch cwd discipline,
+// PITFALLS #13 analog). Empty command → Failed. No elevation variant (runas
+// deferred — the LaunchController Command branch never requests it). The new
+// console owns the child; the process/thread handles are closed immediately,
+// no wait (D-13 instant path). Known limitation: a literal double-quote inside
+// the command can break cmd /K "…" parsing (the documented two-quote rule) —
 // accepted; command rows are single-line text.
 LaunchResult launchCommand(const QString &command);
 
