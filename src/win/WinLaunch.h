@@ -20,8 +20,12 @@ enum class LaunchResult { Launched, CancelledByUser, Failed };
 // lpDirectory = the target's parent dir, never the launcher's cwd
 // (PITFALLS #13). elevated=true → runas verb + SEE_MASK_NOCLOSEPROCESS;
 // the returned process handle is closed immediately, NO wait (D-13 instant
-// path; STACK's "wait" was for the legacy no-handle path).
-// User-cancelled UAC (ERROR_CANCELLED / SE_ERR_ACCESSDENIED) → CancelledByUser
+// path; STACK's "wait" was for the legacy no-handle path). A non-elevated
+// `open` on an admin-required app (manifest requireAdministrator) returns
+// SE_ERR_ACCESSDENIED with NO UAC prompt — Netch-class: the launcher retries
+// that once via `runas` so the app opens (and a real UAC prompt shows)
+// instead of failing silently.
+// User-cancelled UAC (ERROR_CANCELLED) → CancelledByUser
 // — a quiet no-op, never an error dialog (D-11).
 LaunchResult launchClassic(const AppEntry &entry, bool elevated);
 

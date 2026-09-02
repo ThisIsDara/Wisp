@@ -21,15 +21,13 @@ const CLSID kClsidApplicationActivationManager = {
 
 namespace WinLaunch {
 
-LaunchResult launchClassic(const AppEntry &entry, bool elevated)
+// Single ShellExecuteExW attempt for a classic target. Returns the Win32
+// error code on failure (0 = success); on success sets *hOut to the process
+// handle (or INVALID_HANDLE_VALUE when none). The wide buffers are locals so
+// the SHELLEXECUTEINFOW pointers stay valid for the duration of the call.
+static DWORD classicLaunch(const AppEntry &entry, const wchar_t *verb, HANDLE *hOut)
 {
-    // D-11/D-13 contract: launch ONLY the resolved target; no target → Failed.
-    if (entry.targetPath.isEmpty())
-        return LaunchResult::Failed;
-
-    // Keep the wide buffers alive until after ShellExecuteExW returns — the
-    // SHELLEXECUTEINFOW pointers must not dangle (they are consumed during
-    // the call only, so locals are fine).
+    *hOut = INVALID_HANDLE_VALUE;
     const std::wstring fileW = QDir::toNativeSeparators(entry.targetPath).toStdWString();
     const std::wstring dirW =
         QDir::toNativeSeparators(QFileInfo(entry.targetPath).absolutePath()).toStdWString();
@@ -41,7 +39,7 @@ LaunchResult launchClassic(const AppEntry &entry, bool elevated)
     // FLAG_NO_UI: ShellExecuteEx must not pop its own error dialog; the
     // controller classifies and stays silent (D-11).
     sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI;
-    sei.lpVerb = elevated ? L"runas" : L"open";
+    sei.lpVerb = verb;
     sei.lpFile = fileW.c_str();
     // RESEARCH §1: carry the .lnk arguments into elevation (empty → nullptr).
     sei.lpParameters = entry.arguments.isEmpty() ? nullptr : argsW.c_str();
@@ -50,6 +48,39 @@ LaunchResult launchClassic(const AppEntry &entry, bool elevated)
 
     if (!ShellExecuteExW(&sei)) {
         const DWORD err = GetLastError();
+        if (sei.hProcess && sei.hProcess != INVALID_HANDLE_VALUE)
+            CloseHandle(sei.hProcess); // best-effort cleanup on a false return
+        return err;
+    }
+    *hOut = sei.hProcess;
+    return 0;
+}
+
+LaunchResult launchClassic(const AppEntry &entry, bool elevated)
+{
+    // D-11/D-13 contract: launch ONLY the resolved target; no target → Failed.
+    if (entry.targetPath.isEmpty())
+        return LaunchResult::Failed;
+
+    HANDLE hProcess = INVALID_HANDLE_VALUE;
+    DWORD err = classicLaunch(entry, elevated ? L"runas" : L"open", &hProcess);
+
+    // Netch-class fix: a non-elevated `open` on an app whose manifest REQUIRES
+    // elevation fails with SE_ERR_ACCESSDENIED (no UAC prompt — the shell
+    // refuses to auto-elevate on a bare non-elevated open). Retry via `runas`
+    // so the app actually launches (and a real UAC prompt appears) instead of
+    // silently "not opening" — which is what previously left a UI-visible
+    // failure path for the launcher to trip over. Explicit elevated callers
+    // never reach this branch (they go straight to runas above).
+    if (err != 0 && !elevated && err == SE_ERR_ACCESSDENIED) {
+        qInfo("WinLaunch: '%s' needs elevation (err=%lu) — retrying with runas",
+              qUtf8Printable(entry.displayName), ulong(err));
+        if (hProcess && hProcess != INVALID_HANDLE_VALUE)
+            CloseHandle(hProcess);
+        err = classicLaunch(entry, L"runas", &hProcess);
+    }
+
+    if (err != 0) {
         if (err == ERROR_CANCELLED || err == SE_ERR_ACCESSDENIED) {
             // D-11: user cancelled the UAC prompt — quiet no-op, no signals,
             // no UI, launcher stays open for the next attempt.
@@ -62,8 +93,8 @@ LaunchResult launchClassic(const AppEntry &entry, bool elevated)
         return LaunchResult::Failed;
     }
 
-    if (sei.hProcess && sei.hProcess != INVALID_HANDLE_VALUE)
-        CloseHandle(sei.hProcess); // no wait — launch returns immediately (D-13)
+    if (hProcess && hProcess != INVALID_HANDLE_VALUE)
+        CloseHandle(hProcess); // no wait — launch returns immediately (D-13)
     return LaunchResult::Launched;
 }
 

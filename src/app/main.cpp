@@ -42,9 +42,17 @@
 #include "FrameTimeProbe.h"
 #include "core/UpdateService.h"
 #include "ui/UpdateDialogs.h"
+#include "app/CrashReporter.h"
 
 int main(int argc, char *argv[])
 {
+    // Crash-capture contract: install the SEH exception filter + Qt message
+    // handler FIRST — before the single-instance guard or any window. Any
+    // later unhandled exception (e.g. during a launch) writes a readable crash
+    // log to %APPDATA%\TID\wisp\crash\ with the fault address and the trailing
+    // Qt log, instead of dying silently.
+    CrashReporter::install();
+
     // ── SYS-01 (D-09): single-instance guard FIRST — before ANY window or
     // tray construction (CONTEXT boot order; UI-SPEC second-instance
     // contract: no UI surface, no toast). A duplicate process fails the
