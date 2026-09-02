@@ -28,7 +28,7 @@ inline QString fileEntryTitle(const QString &path)
     return name;
 }
 struct AppEntry {
-    enum class Source { Lnk, Uwp, File, Calculator };
+    enum class Source { Lnk, Uwp, File, Calculator, Command };
     Source source = Source::Lnk;
     QString displayName;    // What the user sees and searches (D-01..D-07 use only this)
     QString targetPath;     // Resolved .lnk target (classic); full path (File); empty for UWP

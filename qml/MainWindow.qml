@@ -16,6 +16,13 @@ Window {
     // below, auto-cleared by hintTimer; non-modal by design.
     property string hintText: ""
 
+    // Phase-11 tab-switch perf (2026-09-02): while a tab switch is settling the
+    // ListView collapses its cache/margin window to just the visible rows, so
+    // the grow-back (Favorites→All) only materializes ~the on-screen delegates
+    // instead of a ~70-row burst (rich-text/elide/icon per row was ~900ms on
+    // this machine); the flick buffer restores after the switch settles.
+    property bool tabSwitching: false
+
     // Centered on primary screen availableGeometry (logical px, UI-SPEC Geometry).
     // Applied on every show, not just at creation: Qt tool windows get
     // WM-placed at the screen corner on first show when positioned hidden
@@ -133,6 +140,34 @@ Window {
                     followSelection()
                 }
                 event.accepted = true
+                break
+            case Qt.Key_1: case Qt.Key_2: case Qt.Key_3: case Qt.Key_4: case Qt.Key_5:
+            case Qt.Key_6: case Qt.Key_7: case Qt.Key_8: case Qt.Key_9:
+                // Phase-11 Alt+number quick-select (D-04/D-05): Alt+<digit>
+                // launches row (digit-1) ALWAYS — accepted, never reaches the
+                // field. Bare <digit> launches only while a TYPED query is
+                // active (the on-row hints are visible then, D-05); with an
+                // empty query the event is NOT accepted and falls through so
+                // the user can type digits into the query. Mirrors the click
+                // path: launchController.launchIndex freezes the target at
+                // keypress (D-12) and re-selects the row first.
+                if (event.modifiers & Qt.AltModifier) {
+                    const idx = event.key - Qt.Key_1
+                    if (idx < resultsView.count) {
+                        resultsView.keyboardActive = true
+                        resultsView.lastKbPressMs = Date.now()
+                        launchController.launchIndex(idx, false)
+                    }
+                    event.accepted = true
+                } else if (!event.isAutoRepeat && resultsModel.query.length > 0) {
+                    const idx = event.key - Qt.Key_1
+                    if (idx < resultsView.count) {
+                        resultsView.keyboardActive = true
+                        resultsView.lastKbPressMs = Date.now()
+                        launchController.launchIndex(idx, false)
+                    }
+                    event.accepted = true
+                }
                 break
             case Qt.Key_H:
                 // 05.1: Ctrl+H on the selected row — hide; in show-hidden
@@ -440,15 +475,17 @@ Window {
             }
 
 
-            // Search-field focus identity (2026-08-15 UI pass): a 2px
-            // neon-orange underline (appOutline — matches the app outline and
-            // separators; the user dropped the accent-blue here, 2026-08-15)
-            // that fades in while the field owns focus (the field is focused
-            // on every open — LAUN-05 — so this bar IS the launcher's live
-            // state). Replaces the old static hairline — a dead 1px separator
-            // under the hero field read as "border", not "ready". Fades via
-            // the shared 120ms opacity-only micro-animation contract; overlays
-            // the 8px list gap, never participates in layout.
+            // Search-field focus identity: a 2px accent-derived underline
+            // (appOutline — follows the app outline/separators, which Phase-11
+            // made follow the selected accent; the user dropped the fixed
+            // accent-blue here initially, then accent-follow won in the
+            // backlog) that fades in while the field owns focus (the field is
+            // focused on every open — LAUN-05 — so this bar IS the launcher's
+            // live state). Replaces the old static hairline — a dead 1px
+            // separator under the hero field read as "border", not "ready".
+            // Fades via the shared 120ms opacity-only micro-animation
+            // contract; overlays the 8px list gap, never participates in
+            // layout.
             Rectangle {
                 anchors.top: searchField.bottom
                 anchors.left: parent.left
@@ -489,7 +526,7 @@ Window {
                         text: "All"
                         color: resultsModel.favoritesOnly
                              ? (allHover.containsMouse ? Theme.textPrimary : Theme.textSecondary)
-                             : Theme.surface
+                             : Theme.onAccentAdaptive
                         font.pixelSize: Theme.fontSizeSubtitle
                         font.weight: Theme.fontWeightSemibold
                     }
@@ -515,7 +552,7 @@ Window {
                         anchors.centerIn: parent
                         text: "\u2605 Favorites"
                         color: resultsModel.favoritesOnly
-                             ? Theme.surface
+                             ? Theme.onAccentAdaptive
                              : (favHover.containsMouse ? Theme.textPrimary : Theme.textSecondary)
                         font.pixelSize: Theme.fontSizeSubtitle
                         font.weight: Theme.fontWeightSemibold
@@ -566,10 +603,10 @@ Window {
                 // rows + a small margin) because every paused keystroke resets the
                 // model and re-lays-out whatever delegates exist — 75 alive = jank
                 // per keystroke, ~10 = nothing (2026-09-01 perf pass).
-                cacheBuffer: resultsModel.query.length > 0 ? 0 : 3000
+                cacheBuffer: (tabSwitching || resultsModel.query.length > 0) ? 0 : 3000
                 reuseItems: true             // recycle delegates instead of create/destroy
-                displayMarginBeginning: resultsModel.query.length > 0 ? 0 : 1000
-                displayMarginEnd: resultsModel.query.length > 0 ? 0 : 1000
+                displayMarginBeginning: (tabSwitching || resultsModel.query.length > 0) ? 0 : 1000
+                displayMarginEnd: (tabSwitching || resultsModel.query.length > 0) ? 0 : 1000
                 model: resultsModel
                 delegate: ResultsRow {
                     // 05.1: right-click → shell opens the in-window curation
@@ -679,7 +716,7 @@ Window {
                     topPadding: 0
                     bottomPadding: 0
                     rightPadding: Theme.scrollbarInset
-                    visible: vbar.size < 1.0 && (vbar.active || vbar.hovered || resultsView.hovered)
+                    visible: (vbar.size || 1) < 1.0 && (vbar.active || vbar.hovered || resultsView.hovered)
                     opacity: visible ? 1.0 : 0.0
                     Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
                     contentItem: Rectangle {
@@ -1247,6 +1284,21 @@ Text {
                 }
             }
 
+            // Phase-11: collapse the ListView buffer window during a tab
+            // switch (see root.tabSwitching) and restore it once settled.
+            Connections {
+                target: resultsModel
+                function onFavoritesOnlyChanged() {
+                    root.tabSwitching = true
+                    tabSettleTimer.restart()
+                }
+            }
+            Timer {
+                id: tabSettleTimer
+                interval: 220      // both a grow (inserts) and a hiccup clear
+                onTriggered: root.tabSwitching = false
+            }
+
             // Neon app outline (2026-08-15): the LAST child draws the bright
             // orange ring ON TOP of the surface's content, so the frame is
             // never broken by opaque rows reaching an edge (footer hover
@@ -1295,7 +1347,7 @@ Text {
     // requestActivate, push focus onto the search field so typing lands
     // immediately. Keys.forwardTo still routes nav/Enter/Escape through the
     // shell block while the field owns focus.
-    onActiveChanged: if (window.active) searchField.forceActiveFocus()
+    onActiveChanged: if (active) searchField.forceActiveFocus()
 
     ParallelAnimation {
         id: openAnim

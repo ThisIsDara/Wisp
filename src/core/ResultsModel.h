@@ -172,6 +172,21 @@ private:
     // rows (no-op otherwise). Called at the end of every order-building site
     // (setEntries, buildAppOrder, mergeFiles).
     void filterFavorites();
+    // Phase-11 perf fix (2026-09-02): apply the target view (bRows/bRanges —
+    // computed by the builders under the NEW favoritesOnly flag) as batched
+    // contiguous-run row REMOVES + INSERTS against the CURRENT m_order, instead
+    // of a full beginResetModel. Favorites vs All are both stable orderings of
+    // the same catalog, so survivors keep their ListView delegates (no
+    // rich-text/chip/elide re-run, no icon re-load). When the change is NOT
+    // localized (the two tabs differ by a scattered majority of rows → the
+    // delta would emit hundreds of tiny signal batches, each forcing a QML
+    // layout pass), the WHOLESALE tab switch falls back to a single reset —
+    // one signal pair / one layout pass beats ~N/2 signal pairs. Key
+    // (packed entryIndex + row-origin flags + isCalculator) matches rows
+    // across the two orderings; the packed-quint64 form avoids the ~4000
+    // QString allocations a string signature cost over a ~1000-row catalog.
+    void applyFavoritesDelta(const QVector<Row> &bRows,
+                             const QVector<FuzzyMatcher::Result> &bRanges);
 
     QVector<AppEntry> m_entries;       // always sorted alphabetically (case-insensitive)
     QVector<QString> m_entriesLower;   // lowercased displayName cache for fast scoring

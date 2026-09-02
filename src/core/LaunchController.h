@@ -71,6 +71,11 @@ public:
     // bridge. Tests inject a recording fake — no real Explorer.
     using Revealer = std::function<WinLaunch::LaunchResult(const QString &path)>;
     void setRevealer(Revealer fn);
+    // Phase-11 (D-09): typed-command runner seam — default = the WinLaunch
+    // firewall (launchCommand). Tests inject recording fakes — no real
+    // cmd.exe, no real consoles.
+    using CommandRunner = std::function<WinLaunch::LaunchResult(const QString &command)>;
+    void setCommandRunner(CommandRunner fn);
     // Ctrl+Enter on the CURRENT selection (D-12 snapshot at keypress):
     // Source::File rows (files AND folders) → reveal the containing
     // folder; Lnk/Uwp rows → quiet no-op (LAUN-03 is file-only). Success
@@ -94,4 +99,5 @@ private:
     std::function<void()> m_dismiss;
     LaunchHistory *m_history = nullptr;
     Revealer m_revealer;
+    CommandRunner m_commandRunner;
 };

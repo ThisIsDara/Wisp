@@ -46,6 +46,11 @@ LaunchController::LaunchController(QObject *parent)
     // inject a recording fake — no real Explorer in CI.
     m_revealer = [](const QString &path) { return WinLaunch::revealInExplorer(path); };
 
+    // Phase-11 (D-09): default command runner = the WinLaunch firewall.
+    m_commandRunner = [](const QString &command) {
+        return WinLaunch::launchCommand(command);
+    };
+
     // Window-light default: no-op; 03-05 wires LauncherController::hideNow()
     // (D-13) — the seam keeps tests independent of the window controller.
     m_dismiss = [] {};
@@ -85,6 +90,12 @@ void LaunchController::setRevealer(Revealer fn)
         m_revealer = std::move(fn);
 }
 
+void LaunchController::setCommandRunner(CommandRunner fn)
+{
+    if (fn)
+        m_commandRunner = std::move(fn);
+}
+
 void LaunchController::launchSelected(bool elevated)
 {
     if (!m_model || m_model->rowCount() == 0)
@@ -109,6 +120,31 @@ void LaunchController::launchEntry(const AppEntry &snap, bool elevated)
         if (QClipboard *cb = QGuiApplication::clipboard())
             cb->setText(snap.targetPath);
         // Don't dismiss — keep launcher open so user can keep calculating
+        return;
+    }
+    // Phase-11 (D-09/D-10): typed command row. The snapshot targetPath IS
+    // the command; the instructional "cmd/" row has an empty one and is a
+    // quiet no-op (never launches, never dismisses). Success dismisses
+    // instantly (D-10 — unlike the Calculator branch). Never recorded in
+    // history: a command string is NOT executable inventory and must never
+    // leak into addedExecutables / the default list (the m_reporter bypass
+    // makes the D-10 record path structurally unreachable). No elevation
+    // variant (runas deferred, D-11): Ctrl+Shift+Enter runs normal.
+    if (snap.source == AppEntry::Source::Command) {
+        const QString cmd = snap.targetPath;
+        if (cmd.isEmpty())
+            return;
+        const WinLaunch::LaunchResult r = m_commandRunner(cmd);
+        switch (r) {
+        case WinLaunch::LaunchResult::Launched:
+            m_dismiss();
+            break;
+        case WinLaunch::LaunchResult::CancelledByUser:
+            break; // quiet — same discipline as launchClassic
+        case WinLaunch::LaunchResult::Failed:
+            emit launchFailed(snap.displayName); // never a crash; no dismissal
+            break;
+        }
         return;
     }
     if (elevated && snap.source == AppEntry::Source::Uwp) {

@@ -42,6 +42,7 @@ qt_add_library(wisp_core STATIC
     src/core/AppProvider.cpp
     src/core/FileProvider.cpp
     src/core/CalculatorProvider.cpp
+    src/core/CommandProvider.cpp
     src/core/UpdateService.cpp
     src/ui/HotkeyCaptureDialog.cpp
     src/ui/SettingsWindow.cpp
@@ -146,6 +147,10 @@ if(BUILD_TESTING)
     target_link_libraries(tst_launch PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
     add_test(NAME tst_launch COMMAND tst_launch)
 
+    qt_add_executable(tst_command tests/tst_command.cpp)
+    target_link_libraries(tst_command PRIVATE Qt6::Core Qt6::Gui Qt6::Test wisp_core)
+    add_test(NAME tst_command COMMAND tst_command)
+
     qt_add_executable(tst_tray tests/tst_tray.cpp src/tray/TrayIcon.cpp)
     target_include_directories(tst_tray PRIVATE src)
     target_link_libraries(tst_tray PRIVATE Qt6::Widgets Qt6::Gui Qt6::Test)
@@ -205,7 +210,7 @@ if(BUILD_TESTING)
         tst_enum tst_catalog tst_launch tst_tray tst_filesearch
         tst_scan tst_index
         tst_history tst_icons tst_iconcache tst_settings tst_autostart
-        tst_curation tst_favorites tst_updater
+        tst_curation tst_favorites tst_updater tst_command
         PROPERTIES ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )

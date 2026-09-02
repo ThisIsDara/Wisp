@@ -136,4 +136,37 @@ LaunchResult revealInExplorer(const QString &path)
     return LaunchResult::Launched;
 }
 
+LaunchResult launchCommand(const QString &command)
+{
+    // D-09: no empty commands — the instructional "cmd/ — type a command"
+    // row is guarded here too (belt and suspenders with the controller).
+    if (command.isEmpty())
+        return LaunchResult::Failed;
+
+    const std::wstring lineW =
+        QStringLiteral("cmd.exe /D /C \"%1\"").arg(command).toStdWString();
+    const std::wstring dirW =
+        QDir::toNativeSeparators(QDir::homePath()).toStdWString();
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    // lpCommandLine is documented as writable-only; cmd.exe is the app, the
+    // full line carries the quoted command. CREATE_NEW_CONSOLE: the child
+    // runs in its own console window (visible command output — D-09). The
+    // user-profile cwd keeps launched scripts from depending on the
+    // launcher's working directory.
+    const BOOL ok = CreateProcessW(L"cmd.exe", const_cast<wchar_t *>(lineW.c_str()),
+                                   nullptr, nullptr, FALSE, CREATE_NEW_CONSOLE,
+                                   nullptr, dirW.c_str(), &si, &pi);
+    if (!ok) {
+        qWarning("WinLaunch: CreateProcess(cmd.exe) for '%s' failed (err=%lu)",
+                 qUtf8Printable(command), ulong(GetLastError()));
+        return LaunchResult::Failed;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess); // no wait — the new console owns the child (D-13)
+    return LaunchResult::Launched;
+}
+
 } // namespace WinLaunch

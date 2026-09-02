@@ -20,6 +20,16 @@ Item {
     // delivers hover to the topmost MouseArea only). Drives the hover bg, the
     // buttons' visibility, and the text column's rightMargin.
     property bool hovered: hoverArea.containsMouse || removeHover.containsMouse || favHover.containsMouse
+    // Phase-11 (D-04/D-05): the 1-9 quick-select hint badge is visible ONLY
+    // while a TYPED query is active and the row is one of the first nine —
+    // the empty-query default list stays clean, and hover hands the right
+    // zone back to the star/remove buttons (keyboard users don't hover).
+    property bool hintVisible: !row.hovered && resultsModel.query.length > 0 && model.index < 9
+    // Phase-11 perf: alias the favorite role once — the row reads
+    // `model.isFavorite` 5× per binding pass, and each read is a C++ hash
+    // lookup + id build (ResultsModel IsFavoriteRole). Masking saves those on
+    // every delegate "recycle" during scroll and tab switches.
+    readonly property bool fav: model.isFavorite
 
     // Selected-row emphasis (2026-08-11 user redesign): the current row grows
     // slightly. GROW FROM THE LEFT EDGE (origin Left) — a center origin shifts
@@ -73,11 +83,17 @@ Item {
         Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
         Text {
             anchors.centerIn: parent
-            text: model.iconKey === "calc" ? "\uE8EF" : (model.isFolder ? "\u25B8" : (model.displayName.length > 0 ? model.displayName.charAt(0).toUpperCase() : ""))
+            // Phase-11: iconKey "cmd" (CommandProvider rows) renders a plain
+            // ">" prompt marker in accentLight — no MDL2 font needed. "calc"
+            // keeps the MDL2 calculator glyph (U+E8EF).
+            text: model.iconKey === "calc" ? "\uE8EF"
+                : (model.iconKey === "cmd" ? ">" 
+                   : (model.isFolder ? "\u25B8" : (model.displayName.length > 0 ? model.displayName.charAt(0).toUpperCase() : "")))
             font.family: model.iconKey === "calc" ? "Segoe MDL2 Assets" : ""
             font.pixelSize: model.iconKey === "calc" ? 24 : Theme.fontSizeSubtitle
             font.weight: Theme.fontWeightSemibold
-            color: model.iconKey === "calc" ? Theme.appOutline : (model.isFolder ? Theme.accentLight : Theme.textSecondary)
+            color: model.iconKey === "calc" ? Theme.appOutline
+                 : (model.iconKey === "cmd" || model.isFolder ? Theme.accentLight : Theme.textSecondary)
         }
     }
 
@@ -111,7 +127,7 @@ Item {
         anchors.rightMargin: row.hovered
                              ? Theme.spaceSm + Theme.removeButtonSize + Theme.spaceXs
                                + Theme.removeButtonSize + Theme.spaceSm
-                             : (model.isFavorite
+                             : (row.fav || hintVisible
                                 ? Theme.spaceSm + Theme.removeButtonSize + Theme.spaceXs
                                 : Theme.spaceMd)
         anchors.verticalCenter: parent.verticalCenter
@@ -127,24 +143,33 @@ Item {
             width: parent.width
             height: titleText.height
 
+            // Phase-11 perf: a typed query produces match ranges; the
+            // empty-query / Favorites browse list has none. Cache the ranges
+            // once (instead of 3× `model.matchRanges` reads per binding pass)
+            // and gate the FontMetrics elide + chip reconstruction behind it —
+            // browse rows then never run elidedText() or build an empty chip
+            // array on every materialization / hover re-layout.
+            readonly property var ranges: model.matchRanges || []
+            property bool hasRanges: ranges.length > 0
+
             // Manual elide (UI-SPEC Typography rule 2): the elided string is
             // the single source for BOTH the HTML and the chip geometry — runs
             // clamp against it, so chips can never drift past the elide
             // boundary. `font` MUST mirror the rendered title Text /exactly/
-            // (research Pitfall 6 — subpixel drift).
+            // (research Pitfall 6 — subpixel drift). Computed ONLY when a
+            // typed query has ranges to align (plain browse rows elide via the
+            // Text.elide property instead — no text measurement needed).
             FontMetrics {
                 id: fm
                 font: titleText.font
-                property string elided: elidedText(model.displayName, Qt.ElideRight, titleLine.width)
+                property string elided: titleLine.hasRanges ? elidedText(model.displayName, Qt.ElideRight, titleLine.width) : ""
             }
 
             // Chip geometry: x/width per matched run, advanceWidth-positioned
             // under the spans (Pattern 3). Rebuilds ONLY on width / model-data
-            // / selection change — the binding re-runs when fm.elided or
-            // model.matchRanges change; colors are separate bindings below.
+            // / selection change — and only when ranges exist.
             function computeChips() {
                 var chips = []
-                var ranges = model.matchRanges || []
                 var elided = fm.elided
                 var elidedLen = elided.length
                 for (var i = 0; i < ranges.length; i++) {
@@ -160,7 +185,7 @@ Item {
                 }
                 return chips
             }
-            property var chipRuns: computeChips()
+            property var chipRuns: hasRanges ? computeChips() : []
 
             Repeater {
                 model: titleLine.chipRuns
@@ -197,14 +222,13 @@ Item {
                 // fm.elided, model.matchRanges, ListView.isCurrentItem) —
                 // never per-frame (UI-SPEC hard rule 2).
                 function buildTitleHtml() {
-                    var ranges = model.matchRanges || []
                     var elided = fm.elided
                     var selected = ListView.isCurrentItem
                     var html = ""
                     var pos = 0
-                    for (var i = 0; i < ranges.length; i++) {
-                        var start = ranges[i][0]
-                        var len = ranges[i][1]
+                    for (var i = 0; i < titleLine.ranges.length; i++) {
+                        var start = titleLine.ranges[i][0]
+                        var len = titleLine.ranges[i][1]
                         if (start >= elided.length) continue
                         var end = Math.min(start + len, elided.length)
                         html += escapeText(elided.substring(pos, start))
@@ -218,8 +242,15 @@ Item {
                     html += escapeText(elided.substring(pos))
                     return html
                 }
-                text: buildTitleHtml()
-                textFormat: Text.RichText
+                text: titleLine.hasRanges ? buildTitleHtml() : model.displayName
+                // Phase-11 perf (2026-09-02): Text.RichText is ~25-30ms/row even
+                // for plain content (full HtmlDoc layout) — the felt
+                // Favorites→All grow-back ate ~28ms × visible rows. The
+                // empty-query / Favorites browse list has NO match ranges, so it
+                // renders as PlainText (fast); rich text engages ONLY when a
+                // typed query produces ranges to highlight.
+                textFormat: titleLine.hasRanges ? Text.RichText : Text.PlainText
+                elide: Text.ElideRight
                 font.pixelSize: Theme.fontSizeTitle
                 font.weight: Theme.fontWeightRegular
                 color: Theme.textPrimary      // unmatched segments (near-white on accent: 4.7:1, UI-SPEC)
@@ -274,14 +305,14 @@ Item {
         x: (parent.width - Theme.spaceSm) / row.scale - Theme.removeButtonSize
            - Theme.spaceXs - width
         anchors.verticalCenter: parent.verticalCenter
-        opacity: model.isFavorite ? Theme.fullOpacity : (row.hovered ? Theme.fullOpacity : 0)
+        opacity: row.fav ? Theme.fullOpacity : (row.hovered ? Theme.fullOpacity : 0)
         Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
         Text {
             anchors.centerIn: parent
-            text: model.isFavorite ? "\uE735" : "\uE734" // MDL2 FavoriteStarFill / FavoriteStar — the one declared literal
+            text: row.fav ? "\uE735" : "\uE734" // MDL2 FavoriteStarFill / FavoriteStar — the one declared literal
             font.family: "Segoe MDL2 Assets"
             font.pixelSize: Theme.fontSizeSubtitle
-            color: model.isFavorite ? Theme.appOutline : Theme.textSecondary
+            color: row.fav ? Theme.appOutline : Theme.textSecondary
         }
         MouseArea {
             id: favHover
@@ -289,7 +320,7 @@ Item {
             hoverEnabled: true
             onClicked: {
                 resultsModel.selectIndex(model.index)
-                if (model.isFavorite)
+                if (row.fav)
                     resultsModel.unfavoriteSelected()
                 else
                     resultsModel.favoriteSelected()
@@ -353,5 +384,29 @@ Item {
                     resultsModel.hideSelected()
             }
         }
+    }
+
+    // ── Phase-11 Alt+number quick-select hint (D-04/D-05) ──
+    // Right-pinned 1-9 badge shown ONLY while a typed query is active
+    // (hintVisible). Favorited rows already reserve the right zone for the
+    // star, so the hint pins just LEFT of it; unfavorited rows pin to the far
+    // right. Never competes with the hover-revealed star/remove (they appear
+    // exactly when the row is hovered and the hint is hidden), and the title
+    // column's rightMargin reserves its slot so elision stays clean.
+    Text {
+        id: numHint
+        width: Theme.spaceLg
+        x: row.fav
+           ? (favBtn.x - Theme.spaceXs - width)
+           : (parent.width - Theme.spaceSm - width)
+        anchors.verticalCenter: parent.verticalCenter
+        text: String(model.index + 1)
+        font.pixelSize: Theme.fontSizeKeycap
+        font.weight: Theme.fontWeightSemibold
+        horizontalAlignment: Text.AlignRight
+        color: Theme.accentLight
+        opacity: hintVisible ? Theme.fullOpacity : 0
+        Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
+        visible: opacity > 0
     }
 }

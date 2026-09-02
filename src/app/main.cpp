@@ -8,6 +8,7 @@
 #include "core/AppProvider.h"
 #include "core/AutostartManager.h"
 #include "core/CalculatorProvider.h"
+#include "core/CommandProvider.h"
 #include "core/CurationStore.h"
 #include "core/FavoritesStore.h"
 #include "core/FileIndex.h"
@@ -203,9 +204,10 @@ int main(int argc, char *argv[])
     AppProvider appProvider;
     FileProvider fileProvider;
     CalculatorProvider calcProvider;
+    CommandProvider cmdProvider;
     fileProvider.setIndex(&index);
     fileProvider.setAddedSource([&history] { return history.addedExecutables(); });
-    QVector<SearchProvider*> providers = { &appProvider, &fileProvider, &calcProvider };
+    QVector<SearchProvider*> providers = { &appProvider, &fileProvider, &calcProvider, &cmdProvider };
     resultsModel.setProviders(providers);
     resultsModel.setPool(QThreadPool::globalInstance());
     // D-14: the default-list escape hatch — addedExecutables ONLY (never

@@ -148,8 +148,12 @@ void ResultsModel::applyProviderResult(const ProviderResult &r)
             && !(m_favoritesOnly && m_favoriteIds.contains(idOf(se.entry))))
             continue;
         // 2026-08-15: Favorites tab prunes to favorite rows; the calculator
-        // row is always shown (it was always treated as favorite).
-        if (m_favoritesOnly && !isCalc && !m_favoriteIds.contains(idOf(se.entry)))
+        // row is always shown (it was always treated as favorite). Phase-11:
+        // an explicit Command row answers too — a typed cmd/ query must not
+        // vanish inside the Favorites tab.
+        if (m_favoritesOnly && !isCalc
+            && se.entry.source != AppEntry::Source::Command
+            && !m_favoriteIds.contains(idOf(se.entry)))
             continue;
         newOrder.append(Row{i, false, false, true, isCalc});
         newRanges.append(se.match);
@@ -790,6 +794,10 @@ QVariant ResultsModel::data(const QModelIndex &idx, int role) const
     case SubtitleRole: {
         if (entry.source == AppEntry::Source::Calculator)
             return QStringLiteral("Copy result");
+        // Phase-11 (D-09): a Command row's title IS the command; the subtitle
+        // tells the user what Enter will do.
+        if (entry.source == AppEntry::Source::Command)
+            return QStringLiteral("Run in terminal");
         // D-02: File rows subtitle = the FULL path (elided in QML), not the
         // file name — BEFORE the existing Lnk/Uwp handling, which stays.
         if (entry.source == AppEntry::Source::File)
@@ -805,6 +813,9 @@ QVariant ResultsModel::data(const QModelIndex &idx, int role) const
     case IconKeyRole: {
         if (entry.source == AppEntry::Source::Calculator)
             return QStringLiteral("calc");
+        // Phase-11: "cmd" → the ResultsRow monogram's ">" prompt marker.
+        if (entry.source == AppEntry::Source::Command)
+            return QStringLiteral("cmd");
         // 05-04: image://wispicons/{id} source in the parseKey grammar
         // (WinIconExtractor.h:49-72). Lnk → the enumerator's iconRef
         // ('path;index', GetIconLocation output) verbatim, else "path:" +
@@ -838,7 +849,10 @@ QVariant ResultsModel::data(const QModelIndex &idx, int role) const
     case IsHiddenRole:
         return entry.hidden;
     case IsHideableRole:
-        if (entry.source == AppEntry::Source::Calculator)
+        // Phase-11: Command rows are ephemeral (rebuilt per query) — never
+        // a dead remove button, mirroring the Calculator exclusion.
+        if (entry.source == AppEntry::Source::Calculator
+            || entry.source == AppEntry::Source::Command)
             return false;
         // CUR-04 parity with hideSelected(): TRANSIENT index file rows are
         // never hideable (the search escape hatch stays open); app rows,
@@ -956,6 +970,10 @@ void ResultsModel::hideSelected()
     const AppEntry e = entryAt(row);
     if (e.source == AppEntry::Source::File && !row.fromAdded)
         return;
+    // Phase-11: Command rows are ephemeral — their id IS the command text,
+    // which must never be persisted as a hide-only-via-store identity.
+    if (e.source == AppEntry::Source::Command)
+        return;
     const QString id = e.targetPath.isEmpty() ? e.aumid : e.targetPath;
     if (id.isEmpty())
         return;   // no identity (empty selection) — nothing to persist
@@ -1061,6 +1079,131 @@ void ResultsModel::filterFavorites()
     m_ranges = std::move(keepRanges);
 }
 
+// Phase-11 perf fix (2026-09-02): morph m_order/m_ranges from the current
+// (old-tab) view into bRows/bRanges (the new-tab view) via batched row deltas
+// instead of beginResetModel. Qt reconnect protocol: the row indices in the
+// remove/insert signals are against the model state AS IT EVOLVES, so we MUST
+// start from the old view and apply removals/inserts in lockstep. Survivors
+// (rows present in both the old and new view) keep their ListView delegates —
+// no rich-text/chip/elide re-run, no icon re-load.
+void ResultsModel::applyFavoritesDelta(const QVector<Row> &bRows,
+                                       const QVector<FuzzyMatcher::Result> &bRanges)
+{
+    // Packed integer key uniquely identifies a Row within
+    // buildAppOrder/mergeFiles output: entryIndex (unique per origin array) in
+    // the low 32 bits + the 4 origin/calc flag bits above. No string allocs —
+    // a tab switch over ~1000 rows must not build ~4000 QString signatures in
+    // a debug build (measured ~32ms); this keeps it O(1)-allocation per row.
+    auto rowKey = [](const Row &r) -> quint64 {
+        return quint64(quint64(r.isCalculator) << 33 | quint64(r.fromProvider) << 32
+                       | quint64(r.fromAdded) << 31 | quint64(r.fromFiles) << 30)
+            | quint64(r.entryIndex & 0x3FFFFFFFu);
+    };
+    auto rowKeyOf = [&](int i) -> quint64 { return rowKey(m_order.at(i)); };
+
+    // ── Pass 1: compute BOTH delta directions without emitting, and count the
+    // signal batches each would produce (a "run" = one contiguous
+    // begin/end{Remove,Insert}Rows pair; the target index of an insertion moves
+    // while insertions are applied, so runs here are counted per raw bRows
+    // position difference — the same scatter the emitter below sees).
+    // Removals: old-view rows absent from the new view.
+    QSet<quint64> keep;
+    keep.reserve(bRows.size());
+    for (const Row &r : bRows)
+        keep.insert(rowKey(r));
+    QVector<int> rem;
+    for (int i = 0; i < m_order.size(); ++i)
+        if (!keep.contains(rowKeyOf(i)))
+            rem.append(i);
+    // Insertions: new-view rows absent from the (post-removal) old view.
+    QSet<quint64> have;
+    for (const Row &r : m_order)
+        have.insert(rowKey(r));
+    QVector<QPair<int, int>> ins; // (modelIndex, bRows index) per missing row
+    int survSeen = 0, insDone = 0;
+    for (int bix = 0; bix < bRows.size(); ++bix) {
+        if (have.contains(rowKey(bRows.at(bix))))
+            ++survSeen;
+        else {
+            ins.append({ survSeen + insDone, bix });
+            ++insDone;
+        }
+    }
+    auto countRuns = [](const QVector<int> &v) {
+        int runs = 0;
+        int n = 0;
+        while (n < v.size()) {
+            ++runs;
+            int m = n;
+            while (m + 1 < v.size() && v.at(m + 1) == v.at(m) + 1)
+                ++m;
+            n = m + 1;
+        }
+        return runs;
+    };
+    const int remRuns = countRuns(rem);
+    // Insertion runs: an insertion's target index = survSeen + insDone; two
+    // adjacent bRows entries form one run when their PLACED positions are
+    // consecutive, which here means the intervening bRows survivors are exactly
+    // contiguous too. Counting by (ins[k].first + k - ins[i].first - i)
+    // consecutive-ness mirrors the emitter's while loop below.
+    int insRuns = 0;
+    for (int k = 0; k < ins.size(); ++k) {
+        if (k == 0 || ins.at(k).first != ins.at(k - 1).first + 1)
+            ++insRuns;
+    }
+
+    // ── Policy: LOCALIZED change → row deltas (survivors keep delegates).
+    // Scattered / wholesale change → ONE reset (single signal pair, one QML
+    // layout pass) — hundreds of tiny row-delta pairs each force a QML
+    // highlight re-eval + buffer-window re-layout, the "Favorites→All stutter".
+    constexpr int kMaxDeltaRuns = 24;
+    if (remRuns + insRuns > kMaxDeltaRuns) {
+        beginResetModel();
+        m_order = bRows;
+        m_ranges = bRanges;
+        endResetModel();
+        return;
+    }
+
+    // ── Pass 2: apply removals (DESCENDING run order so earlier precomputed
+    // indices stay valid as the model shrinks). Within a run, removing at the
+    // run's first index `count` times collapses exactly that span.
+    int r = rem.size() - 1;
+    while (r >= 0) {
+        int j = r;
+        while (j - 1 >= 0 && rem.at(j - 1) == rem.at(j) - 1)
+            --j;
+        const int first = rem.at(j), last = rem.at(r);
+        beginRemoveRows(QModelIndex(), first, last);
+        for (int k = first; k <= last; ++k) {
+            m_order.removeAt(first);
+            m_ranges.removeAt(first);
+        }
+        endRemoveRows();
+        r = j - 1;
+    }
+
+    // ── Pass 3: apply insertions (batched contiguous runs, ascending — Qt's
+    // documented safe order). Survivors preserve their relative order; a
+    // missing row slots after the survivors already placed before it.
+    int i = 0;
+    while (i < ins.size()) {
+        int j = i;
+        while (j + 1 < ins.size() && ins.at(j + 1).first == ins.at(j).first + 1)
+            ++j;
+        const int first = ins.at(i).first, n = j - i + 1;
+        beginInsertRows(QModelIndex(), first, first + n - 1);
+        for (int k = i; k <= j; ++k) {
+            const int pos = ins.at(k).first;
+            m_order.insert(pos, bRows.at(ins.at(k).second));
+            m_ranges.insert(pos, bRanges.at(ins.at(k).second));
+        }
+        endInsertRows();
+        i = j + 1;
+    }
+}
+
 bool ResultsModel::favoritesOnly() const
 {
     return m_favoritesOnly;
@@ -1076,18 +1219,38 @@ void ResultsModel::setFavoritesOnly(bool on)
     if (m_favoritesOnly == on)
         return;
     const int oldSelected = m_selected;
+
+    // Phase-11 perf fix (2026-09-02): the old path did a full beginResetModel,
+    // tearing down every ListView delegate (a large set while browsing the
+    // empty-query list, whose cacheBuffer/displayMargin keep ~70 rows alive) →
+    // the felt few-ms tab stutter. Now we compute the NEW-tab view with the
+    // real builders (honoring the flag's hidden-override + favorites filter),
+    // then apply it as batched row deltas so surviving delegates are reused.
+    const QVector<Row> oldRows = m_order;
+    const QVector<FuzzyMatcher::Result> oldRanges = m_ranges;
     m_favoritesOnly = on;
-    beginResetModel();
+
+    // Build the target view into m_order/m_ranges under the new flag; also
+    // refreshes m_hasCalc/m_calcEntry and emits calculatorResultChanged.
+    // Snapshot the target, restore the old view, then morph old → target with
+    // row-level signals (Qt protocol: signal indices are against the model
+    // state as it evolves, i.e. starting from oldRows).
     buildAppOrder();
     if (!m_query.isEmpty())
         mergeFiles();
+    QVector<Row> targetRows = m_order;
+    QVector<FuzzyMatcher::Result> targetRanges = m_ranges;
+    m_order = oldRows;
+    m_ranges = oldRanges;
+
+    applyFavoritesDelta(targetRows, targetRanges);
+
     const int last = m_order.size() - 1;
     if (m_selected > last) {
         m_selected = last < 0 ? 0 : last;
         if (oldSelected != m_selected)
             emit selectionChanged(); // P7: emit only when the clamp moved it
     }
-    endResetModel();
     emit favoritesOnlyChanged();
 }
 

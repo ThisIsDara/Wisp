@@ -5,18 +5,28 @@ QtObject {
     // --- Color (UI-SPEC Color section) ---
     readonly property color surface: "#000000"          // dominant 60% — window surface (fully black, 2026-08-15)
     readonly property color surfaceSecondary: "#2D2D30" // secondary 30% — inset wells (Phase 3)
-    // Neon/cyberpunk identity (2026-08-15): appOutline is the bright neon-orange
-    // ring around the WHOLE app; appOutlineDim is the dim halo ring just
-    // outside it (reads as a neon tube with zero blur cost — D-06 never
-    // blurs the hot path); listBg is the results panel, DARKER than surface.
+    // Neon/cyberpunk identity (2026-08-15; Phase-11 accent-follow 2026-09-02):
+    // appOutline is the bright neon ring around the WHOLE app; appOutlineDim is
+    // the dim halo ring just outside it (reads as a neon tube with zero blur
+    // cost — the hot path is never blurred; listBg is the results panel,
+    // DARKER than surface). Phase-11 D-01/D-02: the outline now FOLLOWS the
+    // user-selected accent — no orange survives a non-orange accent; every
+    // consumer edits nothing because they reference the Token.
+    // 2026-09-02 FIX (accent-follow bug): appOutline is the accent ITSELF, NOT
+    // Qt.lighter(accent,1.5). Qt.lighter MULTIPLIES each RGB channel and CLAMPS
+    // to 255, so a saturated mid-tone accent washed to cream — #F0883E × 1.5
+    // → #FFCC5D (the red channel pinned at 255 and green lifted) — "way whiter
+    // than it should be" next to the old solid-orange ring. The accent is
+    // already the saturated identity color; the ring needs it undiluted.
     readonly property color listBg: "#000000"             // results panel — fully black, matches the surface (2026-08-15)
-    readonly property color appOutline: "#FF7A00"         // neon-orange outline around the whole app
-    readonly property color appOutlineDim: "#9C5400"      // dim halo ring outside the bright ring
+    readonly property color appOutline: accent // bright neon outline around the whole app — the EXACT picked accent (Phase-11 D-02, fixed 2026-09-02)
+    readonly property color appOutlineDim: Qt.darker(appOutline, 1.6) // dim halo ring outside the bright ring — derives from appOutline (darkens the accent ≈ old #FF7A00→#9C5400 ratio)
     readonly property int appOutlineWidth: 2              // neon outline border width
     // Element separators (2026-08-15): hairline dividers between rows/sections
     // are the SAME color as the neon outline — the user's "make all the
     // separating lines match the outline" ask. Kept as a named token so the
-    // dividers stay in lockstep with the identity color.
+    // dividers stay in lockstep with the identity color (which Phase-11 made
+    // accent-derived — so separators follow the accent too).
     readonly property color separator: appOutline
     readonly property color border: "#3F3F46"           // 1px surface hairline
     // D-13/D-15/D-16: the SINGLE mutable color source. The initializer IS the
@@ -34,6 +44,21 @@ QtObject {
     // on surface ≥ 4.5:1 and white on accentDark ≥ 4.5:1).
     readonly property color accentLight: Qt.lighter(accent, 1.45) // match text / selection bar / ▸ glyph
     readonly property color accentDark: Qt.darker(accent, 1.4)    // selected-row chip bg (D-06)
+    // On-accent text that stays legible across the full pickable accent set
+    // AND custom colors (Phase-11 2026-09-02). The All/Favorites toggle active
+    // segments fill with appOutline (= accent); hard black on a DARK accent is
+    // unreadable. Rule: black when the accent's WCAG relative luminance is
+    // clearly bright (L > 0.2 — preserves the black-on-bright cyberpunk look),
+    // else white. Threshold 0.2: borderline mid-tones (violet #8E5CF7 sits
+    // right at the boundary, L≈0.20) err toward the safe white side. Relative
+    // luminance = sRGB linearization + Rec.709 weights (WCAG 2.x); baked = a
+    // function reading `accent` so the binding re-runs on every picker delta
+    // (same reactive contract as appOutline / chipBg).
+    function accentRelLum() {
+        function linsrgb(c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linsrgb(accent.r) + 0.7152 * linsrgb(accent.g) + 0.0722 * linsrgb(accent.b)
+    }
+    property color onAccentAdaptive: accentRelLum() > 0.2 ? surface : onAccentText
     readonly property color textPrimary: "#F5F5F5"
     readonly property color textSecondary: "#A0A0A0"
 

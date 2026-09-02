@@ -55,6 +55,16 @@ AppEntry folderEntry(const QString &name)
     return e;
 }
 
+// Phase-11 (D-08): Source::Command row — displayName = targetPath = command.
+AppEntry commandEntry(const QString &command)
+{
+    AppEntry e;
+    e.source = AppEntry::Source::Command;
+    e.displayName = command;
+    e.targetPath = command;
+    return e;
+}
+
 } // namespace
 
 class TstLaunch : public QObject
@@ -79,6 +89,10 @@ private slots:
     void launchTracking_D10();
     void uwpLaunchNotTracked();
     void revealSnapshotFreeze_D12();
+    // ── Phase-11 additions (11-02): typed-command runner ──
+    void commandLaunchRunsAndDismisses_D10();
+    void commandLaunchFailureSignals();
+    void commandInstructionalRowQuiet();
 };
 
 void TstLaunch::snapshotFreeze_D12()
@@ -530,6 +544,84 @@ void TstLaunch::revealSnapshotFreeze_D12()
     // the recorded path untouched.
     model.setEntries({ fileEntry(QStringLiteral("Gamma")) });
     QCOMPARE(revealedPath, QStringLiteral("C:\\apps\\Beta.exe"));
+}
+
+void TstLaunch::commandLaunchRunsAndDismisses_D10()
+{
+    ResultsModel model;
+    model.setEntries({ commandEntry(QStringLiteral("ipconfig")) });
+    model.setQuery(QString());
+
+    LaunchController c;
+    c.setModel(&model);
+    QString ran;
+    c.setCommandRunner([&](const QString &cmd) {
+        ran = cmd;
+        return WinLaunch::LaunchResult::Launched;
+    });
+    int dismisses = 0;
+    c.setDismissHandler([&] { ++dismisses; });
+    // The app launcher must NEVER fire for a Command row — the Command branch
+    // owns the whole path (D-09); a trip through m_launcher would also funnel
+    // the command into launch history's record path.
+    int launcherCalls = 0;
+    c.setLauncher([&](const AppEntry &, bool, const LaunchController::ResultReporter &) { ++launcherCalls; });
+
+    c.launchSelected(false);
+    QCOMPARE(ran, QStringLiteral("ipconfig"));
+    QCOMPARE(dismisses, 1); // D-10: Enter dismisses
+    QCOMPARE(launcherCalls, 0); // Command never reaches the app launcher
+}
+
+void TstLaunch::commandLaunchFailureSignals()
+{
+    ResultsModel model;
+    model.setEntries({ commandEntry(QStringLiteral("nonexistent_cmd_xyz")) });
+    model.setQuery(QString());
+
+    LaunchController c;
+    c.setModel(&model);
+    int calls = 0;
+    c.setCommandRunner([&](const QString &) {
+        ++calls;
+        return WinLaunch::LaunchResult::Failed;
+    });
+    int dismisses = 0;
+    c.setDismissHandler([&] { ++dismisses; });
+    QSignalSpy spy(&c, &LaunchController::launchFailed);
+
+    c.launchSelected(false);
+    QCOMPARE(calls, 1);
+    QCOMPARE(dismisses, 0); // failure never dismisses
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("nonexistent_cmd_xyz"));
+}
+
+void TstLaunch::commandInstructionalRowQuiet()
+{
+    // The "cmd/ — type a command" row has an EMPTY targetPath — Enter must be
+    // a quiet no-op: no runner call, no dismiss, no signal (D-07/D-09).
+    ResultsModel model;
+    AppEntry instructional = commandEntry(QStringLiteral("cmd/ \u2014 type a command"));
+    instructional.targetPath.clear();
+    model.setEntries({ instructional });
+    model.setQuery(QString());
+
+    LaunchController c;
+    c.setModel(&model);
+    int runnerCalls = 0;
+    c.setCommandRunner([&](const QString &) {
+        ++runnerCalls;
+        return WinLaunch::LaunchResult::Launched;
+    });
+    int dismisses = 0;
+    c.setDismissHandler([&] { ++dismisses; });
+    QSignalSpy spy(&c, &LaunchController::launchFailed);
+
+    c.launchSelected(false);
+    QCOMPARE(runnerCalls, 0);
+    QCOMPARE(dismisses, 0);
+    QCOMPARE(spy.count(), 0);
 }
 
 QTEST_MAIN(TstLaunch)

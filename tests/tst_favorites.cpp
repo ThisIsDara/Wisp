@@ -71,6 +71,9 @@ private slots:
     void favoritesOverrideHidden();
     void fileRowsFavoriteable();
     void missingIdInert();
+    void tabSwitchIsRowDeltaNotReset();
+    void tabSwitchNonContiguousFavorites();
+    void tabSwitchScatteredWholesaleResets();
 };
 
 void TstFavorites::favoritePersistsAcrossInstances()
@@ -253,6 +256,105 @@ void TstFavorites::missingIdInert()
     m.favoriteSelected();
     QVERIFY(spy.calls.isEmpty());
     QVERIFY(!m.data(m.index(0), ResultsModel::IsFavoriteRole).toBool());
+}
+
+void TstFavorites::tabSwitchIsRowDeltaNotReset()
+{
+    // Phase-11 perf fix (2026-09-02): switching tabs MUST NOT beginResetModel
+    // (that tears down every ListView delegate — the felt stutter). It must
+    // emit only the row-level insert/remove deltas so surviving delegates are
+    // reused. Spy the model-change signals: a reset fires modelReset(); the
+    // incremental path fires only rowsInserted/rowsRemoved (never modelReset).
+    ResultsModel m;
+    m.setEntries({ lnkEntry(QStringLiteral("Alpha"), QStringLiteral("C:\\apps\\A.exe")),
+                   lnkEntry(QStringLiteral("Beta"), QStringLiteral("C:\\apps\\B.exe")),
+                   lnkEntry(QStringLiteral("Gamma"), QStringLiteral("C:\\apps\\G.exe")) });
+    m.setFavoriteIds({ QStringLiteral("C:\\apps\\B.exe") });
+
+    QSignalSpy resetSpy(&m, &ResultsModel::modelReset);
+    QSignalSpy insertSpy(&m, &ResultsModel::rowsInserted);
+    QSignalSpy removeSpy(&m, &ResultsModel::rowsRemoved);
+
+    m.setFavoritesOnly(true);   // All → Favorites: remove Alpha, Gamma
+    QCOMPARE(resetSpy.count(), 0);   // must NOT reset
+    QVERIFY(removeSpy.count() > 0);  // row removals drive the switch
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("Beta"));
+
+    m.setFavoritesOnly(false);  // Favorites → All: re-insert Alpha, Gamma
+    QCOMPARE(resetSpy.count(), 0);   // still no reset
+    QVERIFY(insertSpy.count() > 0);
+    QCOMPARE(m.rowCount(), 3);
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("Alpha"));
+    QCOMPARE(displayNameAt(m, 2), QStringLiteral("Gamma"));
+}
+
+void TstFavorites::tabSwitchScatteredWholesaleResets()
+{
+    // Phase-11 (2026-09-02): a WHOLESALE tab switch over a large scattered
+    // set must fall back to a single reset — emitting hundreds of tiny
+    // row-delta batches would each force a QML layout pass (thumbnail "very
+    // laggy Favorites→All"). Scope: > kMaxDeltaRuns getRemoved+/Inserted runs
+    // triggers ONE beginResetModel; content must still be exactly right.
+    ResultsModel m;
+    QVector<AppEntry> entries;
+    for (int i = 0; i < 200; ++i)
+        entries.append(lnkEntry(QStringLiteral("App%1").arg(i, 3, 10, QLatin1Char('0')),
+                                QStringLiteral("C:\\apps\\app%1.exe").arg(i)));
+    m.setEntries(entries);
+    QSet<QString> favs;
+    for (int i = 0; i < 200; i += 3)
+        favs.insert(QStringLiteral("C:\\apps\\app%1.exe").arg(i));
+    m.setFavoriteIds(favs);
+
+    QSignalSpy resetSpy(&m, &ResultsModel::modelReset);
+    QSignalSpy insertSpy(&m, &ResultsModel::rowsInserted);
+    QSignalSpy removeSpy(&m, &ResultsModel::rowsRemoved);
+
+    // All (200) → Favorites (~67, scattered): must go through ONE reset, not
+    // ~67 removal batches.
+    m.setFavoritesOnly(true);
+    QCOMPARE(m.rowCount(), 67);
+    QVERIFY(resetSpy.count() >= 1);          // wholesale → reset (few gestures)
+    QVERIFY(removeSpy.count() + insertSpy.count() <= 1); // no per-row deltas
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("App000"));
+
+    // Favorites → All (back to 200): same — one reset gesture, exact content.
+    resetSpy.clear();
+    m.setFavoritesOnly(false);
+    QCOMPARE(m.rowCount(), 200);
+    QVERIFY(resetSpy.count() >= 1);
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("App000"));
+    QCOMPARE(displayNameAt(m, 199), QStringLiteral("App199"));
+}
+
+void TstFavorites::tabSwitchNonContiguousFavorites()
+{
+    // Favorited rows that are NOT adjacent in the All ordering (Alpha and
+    // Gamma favorited, Beta not) — the tab switch must remove/insert the
+    // non-favorite in the middle without disturbing the survivors' order.
+    ResultsModel m;
+    m.setEntries({ lnkEntry(QStringLiteral("Alpha"), QStringLiteral("C:\\apps\\A.exe")),
+                   lnkEntry(QStringLiteral("Beta"), QStringLiteral("C:\\apps\\B.exe")),
+                   lnkEntry(QStringLiteral("Gamma"), QStringLiteral("C:\\apps\\G.exe")),
+                   lnkEntry(QStringLiteral("Delta"), QStringLiteral("C:\\apps\\D.exe")) });
+    m.setFavoriteIds({ QStringLiteral("C:\\apps\\A.exe"),
+                       QStringLiteral("C:\\apps\\G.exe") });
+
+    m.setFavoritesOnly(true);
+    // Favorites tab shows Alpha then Gamma (Beta + Delta removed, order kept).
+    QCOMPARE(m.rowCount(), 2);
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("Alpha"));
+    QCOMPARE(displayNameAt(m, 1), QStringLiteral("Gamma"));
+
+    m.setFavoritesOnly(false);
+    // Back to All: full alphabetical order (setEntries sorts: Alpha, Beta,
+    // Delta, Gamma — Delta precedes Gamma case-insensitively).
+    QCOMPARE(m.rowCount(), 4);
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("Alpha"));
+    QCOMPARE(displayNameAt(m, 1), QStringLiteral("Beta"));
+    QCOMPARE(displayNameAt(m, 2), QStringLiteral("Delta"));
+    QCOMPARE(displayNameAt(m, 3), QStringLiteral("Gamma"));
 }
 
 QTEST_MAIN(TstFavorites)
