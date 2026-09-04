@@ -4,7 +4,7 @@ import QtQuick.Window
 import wisp
 
 // SYS-03 / D-01/D-02: the settings surface — a dedicated dark tool window,
-// 480x360 fixed (UI-SPEC Geometry), token-only (D-08). Pure QML view: the
+// 480x812 (token-only, D-08; grew 736→812 with the Phase 12 Shortcuts row).
 // 06-03 controller is injected as `settingsController` on open (per-instance
 // beginCreate/setProperty — HotkeyCaptureDialog precedent). Every value is
 // read/written through it; this window never parses the INI.
@@ -89,6 +89,13 @@ Window {
             settingsController.openColorDialog()
     }
 
+    // Phase 12: Show shortcuts row → controller bridge (openHotkeyCapture
+    // pattern — the QML surface signals, the injected host null-guards).
+    function openShortcuts() {
+        if (settingsController)
+            settingsController.openShortcuts()
+    }
+
     // Static pre-rendered shadow — same shell as MainWindow (assets/shadow.png,
     // 16px margin, opacity 0.45).
     Image {
@@ -97,7 +104,7 @@ Window {
         opacity: Theme.shadowOpacity
     }
 
-    // The surface (448x328 + 2x16 shadow margin inside the 480x360 window).
+    // The surface (448x780 + 2x16 shadow margin inside the 480x812 window).
     Rectangle {
         id: surface
         anchors.centerIn: parent
@@ -167,12 +174,12 @@ Window {
             }
         }
 
-        // Content column — vertical budget 608 <= 628 (UI-SPEC declared;
-        // 07-06: +170 scan section; Phase 8: +96 updates section):
-        // 24 pad + 18 header + 12 + 64 + 12 + 88 + 12 + 64 + 12 + 170
-        // + 12 + 96 + 24 pad = 608; column content 560 <= 600 column
-        // height — no clipping (research OQ1: growth via tokens, not a
-        // ScrollView).
+        // Content column — vertical budget (growth precedent: 07-06 +scan,
+        // Phase 8 +updates, Phase 12 +show-shortcuts + header-on-top polish):
+        // 8 top + 6 rows 64/88/64/200/160/64 (640) + 5×12 gaps (60) + 24
+        // bottom pad = 732 within the 768 available (832 surface − 32 drag
+        // header − 32 margins) — no clipping (research OQ1: growth via
+        // tokens, not a ScrollView).
         Column {
             anchors.left: parent.left
             anchors.right: parent.right
@@ -443,69 +450,100 @@ Window {
                     color: Theme.separator
                 }
 
-                Column {
+                // Section header on TOP (Accent-color pattern) — never
+                // vertically centered beside the controls (floating-label
+                // inconsistency). 32px: title + subtitle with the Add action
+                // on the right (always available).
+                Item {
+                    anchors.top: parent.top
+                    anchors.topMargin: Theme.spaceSm
                     anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.spaceXs
-                    Text {
-                        text: "Scan locations"
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeTitle
-                        font.weight: Theme.fontWeightRegular
-                        color: Theme.textPrimary
+                    anchors.right: parent.right
+                    height: Theme.settingsSectionHeader
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+                        Text {
+                            text: "Scan locations"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeTitle
+                            font.weight: Theme.fontWeightRegular
+                            color: Theme.textPrimary
+                        }
+                        Text {
+                            text: "Folders wisp searches for files and folders"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightRegular
+                            color: Theme.textSecondary
+                        }
                     }
+
+                    // "Add folder" — always available, quiet-stepper family
+                    // (secondary well) beside the header, reads as the
+                    // section's primary add.
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: addLabel.implicitWidth + Theme.spaceLg * 2
+                        height: Theme.settingsRowScanItem
+                        radius: Theme.fieldRadius
+                        color: addFolderBtn.containsMouse ? Theme.accentDark : Theme.accent
+                        Text {
+                            id: addLabel
+                            anchors.centerIn: parent
+                            text: "Add folder…"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightSemibold
+                            color: Theme.onAccentText
+                        }
+                        MouseArea {
+                            id: addFolderBtn
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                if (settingsController)
+                                    settingsController.addScanRoot()
+                            }
+                        }
+                    }
+                }
+
+                // Controls — full width, stacked under the header
+                // (roots 56 + 4 + interval 28 + 4 + action 28 = 120 within
+                // the 200-row minus the 32px header).
+                Column {
+                    anchors.top: parent.top
+                    anchors.topMargin: Theme.settingsSectionHeader + Theme.spaceSm
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: Theme.spaceSm
+                    spacing: Theme.spaceXs
+
+                    // Empty placeholder — shown only when no roots yet.
                     Text {
-                        text: "Folders wisp scans for files and folders"
+                        width: parent.width
+                        height: Theme.settingsRowScanItem
+                        verticalAlignment: Text.AlignVCenter
+                        text: "No folders yet"
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSubtitle
                         font.weight: Theme.fontWeightRegular
                         color: Theme.textSecondary
+                        visible: !(settingsController && settingsController.scanRoots.length > 0)
                     }
-                }
-
-// Right-side controls: roots list (or empty placeholder),
-                    // add-folder button, interval row, action row — stacked,
-                    // 28+8+56+8+28+8+28 = 164 <= 170.
-                    Column {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: Theme.spaceSm
-                        width: 260
-
-                        // "Add folder" button (07-06) — the primary
-                        // inventory action; the placeholder text below says
-                        // "add one below" and THIS is what it points at.
-                        Rectangle {
-                            width: parent.width
-                            height: Theme.settingsRowScanItem
-                            radius: Theme.fieldRadius
-                            color: addFolderBtn.containsMouse ? Theme.hoverBg : Theme.surfaceSecondary
-                            border.color: Theme.border
-                            border.width: 1
-                            Text {
-                                anchors.centerIn: parent
-                                text: "Add folder…"
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSizeSubtitle
-                                font.weight: Theme.fontWeightSemibold
-                                color: addFolderBtn.containsMouse ? Theme.textPrimary : Theme.textSecondary
-                            }
-                            MouseArea {
-                                id: addFolderBtn
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: {
-                                    if (settingsController)
-                                        settingsController.addScanRoot()
-                                }
-                            }
-                        }
 
                     // Root list — height-capped (research Pitfall 3: no
                     // full-height ListView), token-driven height.
                     ScrollView {
                         width: parent.width
-                        height: Theme.settingsRowScanRoots
+                        height: (settingsController && settingsController.scanRoots.length > 0)
+                               ? Math.min(settingsController.scanRoots.length, 2) * Theme.settingsRowScanItem
+                               : 0
                         clip: true
                         contentWidth: width
                         visible: settingsController && settingsController.scanRoots.length > 0
@@ -518,10 +556,21 @@ Window {
                                     width: parent.width
                                     height: Theme.settingsRowScanItem
                                     color: "transparent"
+                                    // Hairline separator under every entry but
+                                    // the last (consistency with the rest of
+                                    // the window).
+                                    Rectangle {
+                                        anchors.bottom: parent.bottom
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        height: 1
+                                        color: Theme.separator
+                                        visible: index < (settingsController ? settingsController.scanRoots.length : 0) - 1
+                                    }
                                     Text {
                                         anchors.left: parent.left
                                         anchors.verticalCenter: parent.verticalCenter
-                                        width: parent.width - 60
+                                        width: parent.width - 64
                                         elide: Text.ElideMiddle
                                         text: modelData
                                         font.family: Theme.fontFamily
@@ -529,14 +578,28 @@ Window {
                                         font.weight: Theme.fontWeightRegular
                                         color: Theme.textSecondary
                                     }
-                                    Text {
+                                    // Remove — a real button now (stepper-chip
+                                    // family): bordered well, hover fill,
+                                    // danger-red text on hover so it reads as
+                                    // destructive, not a dim label.
+                                    Rectangle {
                                         anchors.right: parent.right
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: "Remove"
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: Theme.fontSizeSubtitle
-                                        font.weight: Theme.fontWeightRegular
-                                        color: removeHover.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                                        width: removeLabel.implicitWidth + Theme.spaceLg
+                                        height: 24
+                                        radius: Theme.fieldRadius
+                                        color: removeHover.containsMouse ? Theme.hoverBg : "transparent"
+                                        border.width: 1
+                                        border.color: removeHover.containsMouse ? Theme.dangerBorder : Theme.border
+                                        Text {
+                                            id: removeLabel
+                                            anchors.centerIn: parent
+                                            text: "Remove"
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: Theme.fontSizeSubtitle
+                                            font.weight: Theme.fontWeightSemibold
+                                            color: removeHover.containsMouse ? Theme.dangerText : Theme.textSecondary
+                                        }
                                         MouseArea {
                                             id: removeHover
                                             anchors.fill: parent
@@ -550,15 +613,6 @@ Window {
                                 }
                             }
                         }
-                    }
-                    Text {
-                        width: parent.width
-                        text: "No folders yet — add one below"
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeSubtitle
-                        font.weight: Theme.fontWeightRegular
-                        color: Theme.textSecondary
-                        visible: !(settingsController && settingsController.scanRoots.length > 0)
                     }
 
                     // Interval row — ± buttons; the clamp (1..1440) lives in
@@ -731,10 +785,10 @@ Window {
                     }
             }
 
-            // ── Updates row (96px, Phase 8 UI-SPEC S1) — auto-install toggle,
-            // manual Check button, inline status (D-03/D-10). All values flow
-            // through the injected settingsController; failures are text here,
-            // never popups.
+            // ── Updates section (160px, Phase 8 UI-SPEC S1 + header-on-top
+            // polish) — auto-install toggle, manual Check button, inline
+            // status (D-03/D-10). All values flow through the injected
+            // settingsController; failures are text here, never popups.
             Rectangle {
                 id: updatesRow
                 width: parent.width
@@ -748,10 +802,14 @@ Window {
                     color: Theme.separator
                 }
 
+                // Section header on TOP — matches the scan-locations header
+                // (32px: title + subtitle).
                 Column {
+                    anchors.top: parent.top
+                    anchors.topMargin: Theme.spaceSm
                     anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.spaceXs
+                    anchors.right: parent.right
+                    spacing: 2
                     Text {
                         text: "Updates"
                         font.family: Theme.fontFamily
@@ -768,15 +826,17 @@ Window {
                     }
                 }
 
-                // Right-side stack: auto-install toggle row + check row,
-                // 28+8+28 = 64 <= 96 budget minus header overlap allowance
-                // (the section header sits left, controls right — scan-section
-                // layout precedent).
+                // Controls — full width, stacked under the header
+                // (auto-toggle 28 + 8 + check 28 + 8 + status 20 + 8 + hint
+                // 16 = 108 within the 160-row minus the 32px header).
                 Column {
+                    anchors.top: parent.top
+                    anchors.topMargin: Theme.settingsSectionHeader + Theme.spaceSm
+                    anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.spaceSm
-                    width: 260
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: Theme.spaceSm
+                    spacing: Theme.spaceXs
 
                     // Auto-install toggle row — track fills accent when on;
                     // sub-line states the zero-interaction contract (D-05).
@@ -950,6 +1010,68 @@ Window {
                         font.pixelSize: Theme.fontSizeSubtitle
                         font.weight: Theme.fontWeightRegular
                         color: Theme.textSecondary
+                    }
+                }
+            }
+
+            // ── Show shortcuts row (64px, Phase 12) — opens the themed
+            // ShortcutsWindow reference. Left: label+sub; right: accent
+            // button (scan-now/check-button family).
+            Rectangle {
+                id: shortcutsRow
+                width: parent.width
+                height: Theme.settingsRowShortcuts
+                color: "transparent"
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: Theme.separator
+                }
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.spaceXs
+                    Text {
+                        text: "Shortcuts"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeTitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textPrimary
+                    }
+                    Text {
+                        text: "Every key wisp understands"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        font.weight: Theme.fontWeightRegular
+                        color: Theme.textSecondary
+                    }
+                }
+
+                Rectangle {
+                    id: shortcutsBtn
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: shortcutsLabel.implicitWidth + Theme.spaceLg * 2
+                    height: Theme.settingsRowScanItem
+                    radius: Theme.fieldRadius
+                    color: shortcutsHover.containsMouse ? Theme.accentDark : Theme.accent
+                    Text {
+                        id: shortcutsLabel
+                        anchors.centerIn: parent
+                        text: "Show shortcuts"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeSubtitle
+                        font.weight: Theme.fontWeightSemibold
+                        color: Theme.onAccentText
+                    }
+                    MouseArea {
+                        id: shortcutsHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: root.openShortcuts()
                     }
                 }
             }

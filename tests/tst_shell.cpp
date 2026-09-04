@@ -123,7 +123,7 @@ void ShellTest::settingsWindowContract()
     QVERIFY2(settingsWin, "settings window must exist");
     QVERIFY2(settingsWin->isVisible(), "settings window must be visible after open()");
     QCOMPARE(settingsWin->width(), 480);   // UI-SPEC geometry
-    QCOMPARE(settingsWin->height(), 736); // Phase 8: +176 Updates section (bar+hint)
+    QCOMPARE(settingsWin->height(), 864); // Phase 12: +76 Show-shortcuts row + header-on-top polish (was 812)
     QCOMPARE(settings.currentHotkey(), hotkeys.hotkey().toString());
     // The injected controller must reach the QML side: the currentHotkey
     // binding reads settingsController (readonly setProperty is a silent
@@ -150,6 +150,27 @@ void ShellTest::settingsWindowContract()
     settings.openHotkeyCapture();
     QTest::qWait(100);
     QVERIFY2(captureWin->isVisible(), "capture dialog must REOPEN on the second handoff");
+
+    // Phase 12: the Show-shortcuts row → openShortcuts → ShortcutsWindow.
+    // Invoke the QML-side function (bridge parity with CR-01 above) — proves
+    // the module import (ShortcutsWindow.qml registered in wisp_qml) and the
+    // controller-injection both landed.
+    QVERIFY2(QMetaObject::invokeMethod(settingsWin, "openShortcuts"),
+             "QML show-shortcuts function must be invokable");
+    QTest::qWait(100);
+    QQuickWindow *shortcutsWin = findWindowByTitle(QStringLiteral("wisp — keyboard shortcuts"));
+    QVERIFY2(shortcutsWin, "shortcuts window must exist after Show-shortcuts handoff");
+    QVERIFY2(shortcutsWin->isVisible(), "shortcuts window must be visible after handoff");
+    // Mirrors the settings geometry: the window is token-sized (Phase 12).
+    QCOMPARE(shortcutsWin->width(), 560);
+    QCOMPARE(shortcutsWin->height(), 580);
+
+    // Reuse guarantee (CR-02 analog): closing and re-opening reuses the window.
+    shortcutsWin->hide();
+    QTest::qWait(50);
+    settings.openShortcuts();
+    QTest::qWait(100);
+    QVERIFY2(shortcutsWin->isVisible(), "shortcuts window must REOPEN on the second handoff");
 }
 
 QTEST_MAIN(ShellTest)

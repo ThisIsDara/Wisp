@@ -418,6 +418,31 @@ void SettingsWindow::openColorDialog()
     m_colorDialog->requestActivate();
 }
 
+void SettingsWindow::openShortcuts()
+{
+    // Phase 12: lazy-load ShortcutsWindow.qml via the module import system
+    // (openColorDialog precedent — the hardcoded qrc URL rotted once already).
+    if (!m_shortcutsWindow) {
+        QQmlComponent component(m_engine);
+        component.setData("import wisp\nShortcutsWindow {\n}",
+                          QUrl(QStringLiteral("qrc:/qt/qml/wisp/ShortcutsWindow.qml")));
+        if (!component.isReady()) {
+            for (const auto &e : component.errors())
+                qWarning() << e.toString();
+            return;
+        }
+        QObject *winObj = component.beginCreate(m_engine->rootContext());
+        winObj->setProperty("settingsController", QVariant::fromValue(this));
+        component.completeCreate();
+        m_shortcutsWindow = qobject_cast<QQuickWindow *>(winObj);
+        if (!m_shortcutsWindow)
+            return;
+    }
+    centerOnPrimary(m_shortcutsWindow);
+    m_shortcutsWindow->show();
+    m_shortcutsWindow->requestActivate();
+}
+
 bool SettingsWindow::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == m_window && event->type() == QEvent::Close) {

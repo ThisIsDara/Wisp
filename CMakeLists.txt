@@ -91,6 +91,7 @@ qt_add_qml_module(wisp_qml
         qml/SettingsWindow.qml
         qml/ColorDialog.qml
         qml/UpdatePrompt.qml
+        qml/ShortcutsWindow.qml
         qml/Theme.qml
     RESOURCES
         qml/assets/shadow.png

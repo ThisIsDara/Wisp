@@ -132,13 +132,23 @@ QtObject {
     // Window + surface geometry (480x360 → 480x560 + scan section, 07-05;
     // surface = window − 2x16 shadow margin, same shell as the launcher).
 readonly property int settingsWindowWidth: 480
-readonly property int settingsWindowHeight: 736   // +176 Phase 8 Updates section w/ bar+hint (was 560)
+readonly property int settingsWindowHeight: 864   // +52 Phase 12 Show-shortcuts + header-on-top polish (was 812)
 readonly property int settingsSurfaceWidth: 448
-readonly property int settingsSurfaceHeight: 704  // +176 Phase 8 Updates section w/ bar+hint (was 528)
+readonly property int settingsSurfaceHeight: 832  // +52 Phase 12 Show-shortcuts + header-on-top polish (was 780)
     readonly property int colorDialogWindowWidth: 280
     readonly property int colorDialogWindowHeight: 320
     readonly property int colorDialogSurfaceWidth: 248
     readonly property int colorDialogSurfaceHeight: 288
+    // Shortcuts reference window (Phase 12): a header + description rows.
+    // Sized so 11 description rows (42px each) fit the surface WITHOUT a
+    // scrollbar (research: no clipped list, no scroll chrome). Window =
+    // surface + 2x16 shadow margin.
+    readonly property int shortcutsWindowWidth: 560
+    readonly property int shortcutsWindowHeight: 580
+    readonly property int shortcutsSurfaceWidth: 528
+    readonly property int shortcutsSurfaceHeight: 548
+    readonly property int shortcutRowHeight: 42
+    readonly property int shortcutRowGap: 2
     // Accent picker swatches (D-05/D-08: 9 curated mid-tone colors, LOCKED
     // order — 06-UI-SPEC palette table; the picker renders this array, never
     // literals). Derived accentDark contrast for the cyan entry (#00B7C3) at
@@ -160,15 +170,19 @@ readonly property int settingsSurfaceHeight: 704  // +176 Phase 8 Updates sectio
     readonly property int settingsRowAutostart: 64
     readonly property int settingsRowGap: 12      // spaceMd — declared (not 16; vertical budget 488 <= 528)
     readonly property int settingsPad: 24         // content column margins (spaceXl)
-    // "Scan locations" section (07-06): 28 add + 8 + 56 roots + 8 + 28
-    // interval + 8 + 28 action = 164 within 170 (add row added 07-06).
-    readonly property int settingsRowScan: 170
+    // "Scan locations" section (07-06, header-on-top polish): header(32) +
+    // gap(4) + add(28) + gap(4) + roots(56) + gap(4) + interval(28) +
+    // gap(4) + action(28) = 188 within 200.
+    readonly property int settingsRowScan: 200
     readonly property int settingsRowScanItem: 28 // per-root row / interval row / action row height
     readonly property int settingsRowScanRoots: 56 // visible root-list height (2 rows of 28)
-    // Phase 8 Updates section: header(18) + gap(12) + toggle row(28) +
-    // gap(8) + action row(28) + gap(4) + full-width status line(22) = 120
-    // within 124 (declared on the 4-grid).
-    readonly property int settingsRowUpdates: 152   // +28: download bar + hint line (UX pass)
+    readonly property int settingsSectionHeader: 32 // section header (18 title + 2 + 12 subtitle)
+    // Phase 8 Updates section (header-on-top polish): header(28) + gap(6) +
+    // toggle row(28) + gap(6) + check row(28) + gap(6) + download bar(8) +
+    // gap(4) + status(16) + gap(4) + hint(16) = 150 within 160.
+    readonly property int settingsRowUpdates: 160   // header-on-top layout (was 152)
+    // Phase 12 Show-shortcuts row: 64px (hotkey-row family) — opens ShortcutsWindow.
+    readonly property int settingsRowShortcuts: 64
     // Phase 8 update dialog (UI-SPEC S2 geometry).
     // Prompt inner budget: title(20)+gap(8)+subcopy(2x16)+gap(8)+buttons(28)
     // = 96 <= 136 (window - 2x16 shadow/surface margins). UAT fix: 132 was
@@ -192,6 +206,10 @@ readonly property int settingsSurfaceHeight: 704  // +176 Phase 8 Updates sectio
     // ≈4.3:1 on surface declared acceptable for transient text). Tokenizes the
     // shipped Phase-2 capture-dialog literal.
     readonly property color danger: "#E5484D"
+    // D-09 destructive-button affordance tokens (Phase 12): hover on a remove
+    // button turns text + border danger-red so the action reads as destructive.
+    readonly property color dangerText: danger
+    readonly property color dangerBorder: danger
     // Primary-button text on accent fill (declared exception — the custom
     // dialog OK button). Tokenizes the shipped capture-dialog OK-button
     // literal so that file's zero-hex gate holds; pixel-identical.

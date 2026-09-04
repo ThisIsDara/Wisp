@@ -21,7 +21,8 @@ class UpdateService;
 
 // SYS-03 / D-01: the settings surface controller — a small QML host
 // (HotkeyCaptureDialog analog, RESEARCH Pattern 3). Owns the
-// SettingsWindow.qml + ColorDialog.qml QQuickWindows, injects itself as the
+// SettingsWindow.qml + ColorDialog.qml + ShortcutsWindow.qml QQuickWindows,
+// injects itself as the
 // `settingsController` context property (per-instance beginCreate/setProperty
 // — capture-dialog precedent), and owns the D-02 dismissal contract:
 // Esc → instant hide; click-away → deactivation-hide with a 150ms grace —
@@ -76,6 +77,7 @@ public:
     Q_INVOKABLE void toggleAutostart();                   // → AutostartManager::setEnabled(!isEnabled)
     Q_INVOKABLE void openHotkeyCapture();                 // → existing HotkeyCaptureDialog
     Q_INVOKABLE void openColorDialog();                   // staged ColorDialog (06-02)
+    Q_INVOKABLE void openShortcuts();                     // Phase 12: ShortcutsWindow (reference list)
     // ── Scan locations (07-05, D-10): native-picker root add/remove, ±
     // interval selector, manual scan — all via ScanService + SettingsStore ──
     Q_INVOKABLE QStringList scanRoots() const;            // live store read
@@ -144,6 +146,7 @@ private:
     FolderPicker m_folderPicker;
     QPointer<QQuickWindow> m_window;
     QPointer<QQuickWindow> m_colorDialog;
+    QPointer<QQuickWindow> m_shortcutsWindow; // Phase 12: ShortcutsWindow reference
     QTimer *m_graceTimer;
     QPropertyAnimation *m_fade;
     QPropertyAnimation *m_closeFade; // 2026-08-15: close fade-out (hideWindow on finished)
