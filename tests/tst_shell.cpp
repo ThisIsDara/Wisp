@@ -123,7 +123,7 @@ void ShellTest::settingsWindowContract()
     QVERIFY2(settingsWin, "settings window must exist");
     QVERIFY2(settingsWin->isVisible(), "settings window must be visible after open()");
     QCOMPARE(settingsWin->width(), 480);   // UI-SPEC geometry
-    QCOMPARE(settingsWin->height(), 864); // Phase 12: +76 Show-shortcuts row + header-on-top polish (was 812)
+    QCOMPARE(settingsWin->height(), 756); // roomy 36px scan-root rows grew the exact-fit window (was 740)
     QCOMPARE(settings.currentHotkey(), hotkeys.hotkey().toString());
     // The injected controller must reach the QML side: the currentHotkey
     // binding reads settingsController (readonly setProperty is a silent

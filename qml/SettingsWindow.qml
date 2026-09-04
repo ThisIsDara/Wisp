@@ -4,7 +4,8 @@ import QtQuick.Window
 import wisp
 
 // SYS-03 / D-01/D-02: the settings surface — a dedicated dark tool window,
-// 480x812 (token-only, D-08; grew 736→812 with the Phase 12 Shortcuts row).
+// 480x756 (token-only, D-08; 864→740 right-aligned exact-fit, then +16
+// for roomy 36px scan-root rows).
 // 06-03 controller is injected as `settingsController` on open (per-instance
 // beginCreate/setProperty — HotkeyCaptureDialog precedent). Every value is
 // read/written through it; this window never parses the INI.
@@ -104,7 +105,7 @@ Window {
         opacity: Theme.shadowOpacity
     }
 
-    // The surface (448x780 + 2x16 shadow margin inside the 480x812 window).
+    // The surface (448x724 + 2x16 shadow margin inside the 480x756 window).
     Rectangle {
         id: surface
         anchors.centerIn: parent
@@ -174,12 +175,12 @@ Window {
             }
         }
 
-        // Content column — vertical budget (growth precedent: 07-06 +scan,
-        // Phase 8 +updates, Phase 12 +show-shortcuts + header-on-top polish):
-        // 8 top + 6 rows 64/88/64/200/160/64 (640) + 5×12 gaps (60) + 24
-        // bottom pad = 732 within the 768 available (832 surface − 32 drag
-        // header − 32 margins) — no clipping (research OQ1: growth via
-        // tokens, not a ScrollView).
+        // Content column — exact-fit vertical budget (right-aligned scan/
+        // updates actions, 12px scan breathing gap, roomy 36px root rows):
+        // 8 top + 6 rows 64/88/64/188/132/64 (600) + 5×12 gaps (60) + 24
+        // bottom pad = 692 within the 692 available (724 surface − 32 drag
+        // header) — no bottom waste (research OQ1: growth via tokens, not
+        // a ScrollView).
         Column {
             anchors.left: parent.left
             anchors.right: parent.right
@@ -433,10 +434,12 @@ Window {
                 }
             }
 
-            // ── Scan locations row (158px, 07-05 D-10) — roots list with
+            // ── Scan locations row (188px, 07-05 D-10) — roots list with
             // add/remove (native picker), ± interval selector, Scan now, and
-            // the last-scan summary. All values flow through the injected
-            // settingsController; the surface never parses the INI.
+            // the last-scan summary. Text always sits LEFT, every button
+            // RIGHT (Add folder…, Remove, −/+, Scan now). All values flow
+            // through the injected settingsController; the surface never
+            // parses the INI.
             Rectangle {
                 id: scanRow
                 width: parent.width
@@ -512,12 +515,14 @@ Window {
                     }
                 }
 
-                // Controls — full width, stacked under the header
-                // (roots 56 + 4 + interval 28 + 4 + action 28 = 120 within
-                // the 200-row minus the 32px header).
+                // Controls — full width, stacked under the header with a 12px
+                // breathing gap so the roots never sit mushed against the
+                // subtitle (roots 72 + 4 + interval 28 + 4 + action 28 = 136
+                // within the 188-row minus the 32px header, 12px gap and 8px
+                // bottom pad).
                 Column {
                     anchors.top: parent.top
-                    anchors.topMargin: Theme.settingsSectionHeader + Theme.spaceSm
+                    anchors.topMargin: Theme.settingsSectionHeader + Theme.spaceMd
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
@@ -542,7 +547,7 @@ Window {
                     ScrollView {
                         width: parent.width
                         height: (settingsController && settingsController.scanRoots.length > 0)
-                               ? Math.min(settingsController.scanRoots.length, 2) * Theme.settingsRowScanItem
+                               ? Math.min(settingsController.scanRoots.length, 2) * Theme.settingsRowScanRoot
                                : 0
                         clip: true
                         contentWidth: width
@@ -554,11 +559,12 @@ Window {
                                 model: settingsController ? settingsController.scanRoots : []
                                 Rectangle {
                                     width: parent.width
-                                    height: Theme.settingsRowScanItem
+                                    height: Theme.settingsRowScanRoot
                                     color: "transparent"
                                     // Hairline separator under every entry but
                                     // the last (consistency with the rest of
-                                    // the window).
+                                    // the window) — the 36px row leaves 6px
+                                    // between the Remove button and the line.
                                     Rectangle {
                                         anchors.bottom: parent.bottom
                                         anchors.left: parent.left
@@ -615,28 +621,36 @@ Window {
                         }
                     }
 
-                    // Interval row — ± buttons; the clamp (1..1440) lives in
-                    // SettingsStore (OQ4), never in the UI.
-                    Row {
+                    // Interval row — label LEFT, ± steppers RIGHT; the clamp
+                    // (1..1440) lives in SettingsStore (OQ4), never in the UI.
+                    Item {
                         width: parent.width
                         height: Theme.settingsRowScanItem
-                        spacing: Theme.spaceSm
-                        Text {
+                        Row {
+                            anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Scan every"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeSubtitle
-                            font.weight: Theme.fontWeightRegular
-                            color: Theme.textSecondary
+                            spacing: Theme.spaceSm
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Scan every"
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightRegular
+                                color: Theme.textSecondary
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: settingsController ? settingsController.scanIntervalMinutes + " min" : "10 min"
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightSemibold
+                                color: Theme.textPrimary
+                            }
                         }
-                        Text {
+                        Row {
+                            anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            text: settingsController ? settingsController.scanIntervalMinutes + " min" : "10 min"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeSubtitle
-                            font.weight: Theme.fontWeightSemibold
-                            color: Theme.textPrimary
-                        }
+                            spacing: Theme.spaceSm
                                                 // 2026-08-15 (UI pass): −/+ as stepper chips —
                         // 24px wells (same radius family as the field well),
                         // hoverBg fill + textPrimary on hover. Before: bare
@@ -693,14 +707,30 @@ Window {
                                 }
                             }
                         }
+                        }
                     }
 
-                    // Action row — "Scan now" accent button + last-scan summary.
-                    Row {
+                    // Action row — last-scan summary LEFT, "Scan now" accent
+                    // button RIGHT (all section buttons live on the right).
+                    Item {
                         width: parent.width
                         height: Theme.settingsRowScanItem
-                        spacing: Theme.spaceSm
+                        Text {
+                            anchors.left: parent.left
+                            anchors.right: scanNowBtn.left
+                            anchors.rightMargin: Theme.spaceSm
+                            anchors.verticalCenter: parent.verticalCenter
+                            elide: Text.ElideMiddle
+                            text: settingsController && settingsController.lastScanSummary !== ""
+                                  ? settingsController.lastScanSummary : "Not scanned yet"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightRegular
+                            color: Theme.textSecondary
+                        }
                         Rectangle {
+                            id: scanNowBtn
+                            anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             width: 84
                             height: Theme.settingsRowScanItem
@@ -728,17 +758,6 @@ Window {
                                 }
                             }
                         }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 84 - Theme.spaceSm
-                            elide: Text.ElideMiddle
-                            text: settingsController && settingsController.lastScanSummary !== ""
-                                  ? settingsController.lastScanSummary : "Not scanned yet"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeSubtitle
-                            font.weight: Theme.fontWeightRegular
-                            color: Theme.textSecondary
-                        }
                     }
                 }
 
@@ -748,7 +767,7 @@ Window {
                     // track; the honest "no fake %" choice for a recursive walk
                     // where the total dir count isn't known upfront. Overlays
                     // the section bottom (never participates in the centered
-                    // layout, so the fixed 170px budget stays put).
+                    // layout, so the fixed 188px budget stays put).
                     Item {
                         id: scanBar
                         anchors.right: parent.right
@@ -785,10 +804,12 @@ Window {
                     }
             }
 
-            // ── Updates section (160px, Phase 8 UI-SPEC S1 + header-on-top
+            // ── Updates section (132px, Phase 8 UI-SPEC S1 + header-on-top
             // polish) — auto-install toggle, manual Check button, inline
-            // status (D-03/D-10). All values flow through the injected
-            // settingsController; failures are text here, never popups.
+            // status (D-03/D-10). Text always sits LEFT, every button RIGHT
+            // (toggle, Check for updates, Download now). All values flow
+            // through the injected settingsController; failures are text
+            // here, never popups.
             Rectangle {
                 id: updatesRow
                 width: parent.width
@@ -827,8 +848,9 @@ Window {
                 }
 
                 // Controls — full width, stacked under the header
-                // (auto-toggle 28 + 8 + check 28 + 8 + status 20 + 8 + hint
-                // 16 = 108 within the 160-row minus the 32px header).
+                // (auto-toggle 28 + 4 + check 40 + 4 + download bar 0..6 =
+                // 76..82 within the 132-row minus the 32px header, 8px gap
+                // and 8px bottom pad).
                 Column {
                     anchors.top: parent.top
                     anchors.topMargin: Theme.settingsSectionHeader + Theme.spaceSm
@@ -894,74 +916,116 @@ Window {
                         }
                     }
 
-                    // Check row — accent button (Scan-now clone, but
-                    // content-sized: "Check for updates" outgrows the fixed
-                    // 84px Scan-now width) + reactive inline status; while an
-                    // update is pending the status turns bold textPrimary and
-                    // a Download now button appears (D-03).
-                    Row {
+                    // Check row — status + hint stacked LEFT, Check/Download
+                    // buttons RIGHT (all section buttons live on the right).
+                    // While an update is pending the status turns bold
+                    // textPrimary and the Download now button appears (D-03).
+                    Item {
                         width: parent.width
-                        height: Theme.settingsRowScanItem
-                        spacing: Theme.spaceSm
-                        Rectangle {
+                        height: Theme.settingsRowUpdatesCheck
+                        Row {
+                            id: checkBtns
+                            anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            width: checkLabel.implicitWidth + 24
-                            height: Theme.settingsRowScanItem
-                            radius: Theme.fieldRadius
-                            color: checkBtn.containsMouse ? Theme.accentDark : Theme.accent
-                            Text {
-                                id: checkLabel
-                                anchors.centerIn: parent
-                                text: "Check for updates"
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSizeSubtitle
-                                font.weight: Theme.fontWeightSemibold
-                                color: Theme.onAccentText
+                            spacing: Theme.spaceSm
+                            Rectangle {
+                                visible: settingsController && settingsController.updateAvailable
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: dlLabel.implicitWidth + 24
+                                height: Theme.settingsRowScanItem
+                                radius: Theme.fieldRadius
+                                color: dlBtn.containsMouse ? Theme.accentDark : Theme.accent
+                                Text {
+                                    id: dlLabel
+                                    anchors.centerIn: parent
+                                    text: "Download now"
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeSubtitle
+                                    font.weight: Theme.fontWeightSemibold
+                                    color: Theme.onAccentText
+                                }
+                                MouseArea {
+                                    id: dlBtn
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        if (settingsController)
+                                            settingsController.downloadPendingUpdate()
+                                    }
+                                }
                             }
-                            MouseArea {
-                                id: checkBtn
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: {
-                                    if (settingsController)
-                                        settingsController.checkForUpdatesNow()
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: checkLabel.implicitWidth + 24
+                                height: Theme.settingsRowScanItem
+                                radius: Theme.fieldRadius
+                                color: checkBtn.containsMouse ? Theme.accentDark : Theme.accent
+                                Text {
+                                    id: checkLabel
+                                    anchors.centerIn: parent
+                                    text: "Check for updates"
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeSubtitle
+                                    font.weight: Theme.fontWeightSemibold
+                                    color: Theme.onAccentText
+                                }
+                                MouseArea {
+                                    id: checkBtn
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        if (settingsController)
+                                            settingsController.checkForUpdatesNow()
+                                    }
                                 }
                             }
                         }
-                        Rectangle {
-                            visible: settingsController && settingsController.updateAvailable
+                        // Status line — plain outcome, % included while
+                        // downloading; hint below answers "what happens
+                        // next" and hides itself when empty (Checking).
+                        Column {
+                            anchors.left: parent.left
+                            anchors.right: checkBtns.left
+                            anchors.rightMargin: Theme.spaceSm
                             anchors.verticalCenter: parent.verticalCenter
-                            width: dlLabel.implicitWidth + 24
-                            height: Theme.settingsRowScanItem
-                            radius: Theme.fieldRadius
-                            color: dlBtn.containsMouse ? Theme.accentDark : Theme.accent
+                            spacing: 2
                             Text {
-                                id: dlLabel
-                                anchors.centerIn: parent
-                                text: "Download now"
+                                width: parent.width
+                                height: 20
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
+                                // PROPERTY binding (no parens) — refreshes on
+                                // updateStatusChanged from any engine transition.
+                                text: settingsController ? settingsController.updateStatus
+                                                         : "Not checked yet"
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontSizeSubtitle
-                                font.weight: Theme.fontWeightSemibold
-                                color: Theme.onAccentText
+                                font.weight: settingsController && settingsController.updateAvailable
+                                             ? Theme.fontWeightSemibold : Theme.fontWeightRegular
+                                color: settingsController && settingsController.updateAvailable
+                                       ? Theme.textPrimary : Theme.textSecondary
                             }
-                            MouseArea {
-                                id: dlBtn
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: {
-                                    if (settingsController)
-                                        settingsController.downloadPendingUpdate()
-                                }
+                            Text {
+                                width: parent.width
+                                height: visible ? 16 : 0
+                                visible: settingsController && settingsController.updateHint !== ""
+                                elide: Text.ElideRight
+                                text: settingsController ? settingsController.updateHint : ""
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.weight: Theme.fontWeightRegular
+                                color: Theme.textSecondary
                             }
                         }
                     }
 
                     // Download bar — determinate accent fill while a download
                     // is in flight (scan-bar tokens; UX pass moved progress
-                    // INTO Settings; the floating window is gone).
+                    // INTO Settings; the floating window is gone). Collapses
+                    // to 0 when idle so it never reserves layout space.
                     Item {
                         width: parent.width
-                        height: Theme.scanBarHeight + 2
+                        height: visible ? Theme.scanBarHeight + 2 : 0
                         visible: settingsController && settingsController.updateDownloading
 
                         Rectangle {
@@ -978,38 +1042,6 @@ Window {
                             radius: Theme.scanBarRadius
                             color: Theme.accent
                         }
-                    }
-
-                    // Status line — plain outcome, % included while downloading.
-                    Text {
-                        width: parent.width
-                        height: 20
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        // PROPERTY binding (no parens) — refreshes on
-                        // updateStatusChanged from any engine transition.
-                        text: settingsController ? settingsController.updateStatus
-                                                 : "Not checked yet"
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeSubtitle
-                        font.weight: settingsController && settingsController.updateAvailable
-                                     ? Theme.fontWeightSemibold : Theme.fontWeightRegular
-                        color: settingsController && settingsController.updateAvailable
-                               ? Theme.textPrimary : Theme.textSecondary
-                    }
-
-                    // Hint line — the "what happens next" answer for every
-                    // state. Hides itself when empty (Checking).
-                    Text {
-                        width: parent.width
-                        height: visible ? 16 : 0
-                        visible: settingsController && settingsController.updateHint !== ""
-                        elide: Text.ElideRight
-                        text: settingsController ? settingsController.updateHint : ""
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeSubtitle
-                        font.weight: Theme.fontWeightRegular
-                        color: Theme.textSecondary
                     }
                 }
             }

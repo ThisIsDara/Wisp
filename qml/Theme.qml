@@ -132,9 +132,9 @@ QtObject {
     // Window + surface geometry (480x360 → 480x560 + scan section, 07-05;
     // surface = window − 2x16 shadow margin, same shell as the launcher).
 readonly property int settingsWindowWidth: 480
-readonly property int settingsWindowHeight: 864   // +52 Phase 12 Show-shortcuts + header-on-top polish (was 812)
+readonly property int settingsWindowHeight: 756   // right-aligned scan/updates actions + breathing room: rows shrink, then scan roots grew to 36px rows (was 740)
 readonly property int settingsSurfaceWidth: 448
-readonly property int settingsSurfaceHeight: 832  // +52 Phase 12 Show-shortcuts + header-on-top polish (was 780)
+readonly property int settingsSurfaceHeight: 724  // window − 2x16 shadow margin (was 708)
     readonly property int colorDialogWindowWidth: 280
     readonly property int colorDialogWindowHeight: 320
     readonly property int colorDialogSurfaceWidth: 248
@@ -171,16 +171,20 @@ readonly property int settingsSurfaceHeight: 832  // +52 Phase 12 Show-shortcuts
     readonly property int settingsRowGap: 12      // spaceMd — declared (not 16; vertical budget 488 <= 528)
     readonly property int settingsPad: 24         // content column margins (spaceXl)
     // "Scan locations" section (07-06, header-on-top polish): header(32) +
-    // gap(4) + add(28) + gap(4) + roots(56) + gap(4) + interval(28) +
-    // gap(4) + action(28) = 188 within 200.
-    readonly property int settingsRowScan: 200
-    readonly property int settingsRowScanItem: 28 // per-root row / interval row / action row height
-    readonly property int settingsRowScanRoots: 56 // visible root-list height (2 rows of 28)
+    // breathing gap(12) + roots(72: 2 roomy 36px rows so the Remove buttons
+    // clear each other and the hairline) + gap(4) + interval(28) + gap(4) +
+    // action(28) + bottom pad(8) = 188 exact.
+    readonly property int settingsRowScan: 188
+    readonly property int settingsRowScanItem: 28 // interval row / action row height
+    readonly property int settingsRowScanRoot: 36 // per-root row — 24px Remove button + 6px clearance top/bottom
+    readonly property int settingsRowScanRoots: 72 // visible root-list height (2 rows of 36)
     readonly property int settingsSectionHeader: 32 // section header (18 title + 2 + 12 subtitle)
-    // Phase 8 Updates section (header-on-top polish): header(28) + gap(6) +
-    // toggle row(28) + gap(6) + check row(28) + gap(6) + download bar(8) +
-    // gap(4) + status(16) + gap(4) + hint(16) = 150 within 160.
-    readonly property int settingsRowUpdates: 160   // header-on-top layout (was 152)
+    // Phase 8 Updates section (header-on-top polish, right-aligned check
+    // actions): header(32) + gap(8) + toggle row(28) + gap(4) + check row(40:
+    // status+hint stacked left, buttons right) + gap(4) + download bar(0..6)
+    // + bottom pad(8) = 124..130 within 132.
+    readonly property int settingsRowUpdates: 132   // right-aligned layout (was 160)
+    readonly property int settingsRowUpdatesCheck: 40 // status(20) + hint(16) stacked, buttons centered beside
     // Phase 12 Show-shortcuts row: 64px (hotkey-row family) — opens ShortcutsWindow.
     readonly property int settingsRowShortcuts: 64
     // Phase 8 update dialog (UI-SPEC S2 geometry).

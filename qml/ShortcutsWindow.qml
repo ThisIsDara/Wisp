@@ -61,7 +61,7 @@ Window {
         opacity: Theme.shadowOpacity
     }
 
-    // The surface (528x448 + 2x16 shadow margin inside the 560x480 window).
+    // The surface (528x548 + 2x16 shadow margin inside the 560x580 window).
     Rectangle {
         id: surface
         anchors.centerIn: parent
