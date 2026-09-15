@@ -171,9 +171,16 @@ void LaunchController::revealSelected()
     // D-12: the target is frozen at keypress — a value copy; a selection
     // shift during the revealer call cannot change what gets revealed.
     const AppEntry snap = m_model->snapshotSelected();
-    // LAUN-03 is file-only (T-04-09): Lnk/Uwp rows are quiet no-ops —
-    // explorer.exe is structurally unreachable for app rows.
-    if (snap.source != AppEntry::Source::File)
+    // LAUN-03 / 0.1.8: reveal covers File rows AND Lnk rows with a resolved
+    // target (a .lnk's "Open file location" opens to the actual exe's
+    // folder). Uwp/Calculator/Command rows and unresolved links are quiet
+    // no-ops — explorer.exe is structurally unreachable for them. The
+    // empty-target guard doubles as defense-in-depth (the C++ source check
+    // is mirrored by QML's canReveal, never trusted alone).
+    if (snap.source == AppEntry::Source::Uwp
+        || snap.source == AppEntry::Source::Calculator
+        || snap.source == AppEntry::Source::Command
+        || snap.targetPath.isEmpty())
         return;
     const WinLaunch::LaunchResult r = m_revealer(snap.targetPath);
     switch (r) {

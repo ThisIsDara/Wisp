@@ -111,6 +111,7 @@ private slots:
     void hideMarksAllSameIdRows_M01();   // 05.1 review: mark ALL same-id rows
     void unhideNoOpOnVisibleRow_L01();   // 05.1 review: no spurious shown override
     void isHideableRole_CUR04();         // 2026-08-15: remove-button visibility parity
+    void canRevealRole();                 // 0.1.8: "Open file location" menu-item visibility
 };
 
 void TstModel::emptyQueryFullList_D01_D02()
@@ -947,6 +948,40 @@ void TstModel::isHideableRole_CUR04()
                                  QStringLiteral("C:\\x\\Noise.exe")) });
     QCOMPARE(m.rowCount({}), 1);
     QCOMPARE(m.data(m.index(0), ResultsModel::IsHideableRole).toBool(), false);
+}
+
+void TstModel::canRevealRole()
+{
+    // 0.1.8: the right-click menu shows "Open file location" only on rows
+    // revealSelected() can actually reveal. File rows (folders included) and
+    // Lnk rows with a RESOLVED target qualify; Uwp/Calculator/Command rows
+    // and unresolved links never do.
+    ResultsModel m;
+    m.setEntries({ lnkEntry(QStringLiteral("Alpha"), QStringLiteral("C:\\apps\\alpha.exe")),
+                   // Unresolved link — archetype of an empty-target Lnk row.
+                   lnkEntry(QStringLiteral("Broken Link"), {}),
+                   uwpEntry(QStringLiteral("Store App")) });
+    m.setQuery(QString());
+    QCOMPARE(m.rowCount({}), 3);
+    // setEntries sorts alphabetically (D-01): Alpha / Broken Link / Store App.
+    QCOMPARE(m.data(m.index(0), ResultsModel::CanRevealRole).toBool(), true);  // Lnk + resolved target
+    QCOMPARE(m.data(m.index(1), ResultsModel::CanRevealRole).toBool(), false); // Lnk, empty target
+    QCOMPARE(m.data(m.index(2), ResultsModel::CanRevealRole).toBool(), false); // UWP
+
+    // File (D-04 folder included) rows reveal; the live-query channel proves
+    // a plain indexed file row — the canReveal branch does NOT exclude the
+    // transient file channel the way isHideable does.
+    m.setQuery(QStringLiteral("data"));
+    m.setFileResults(1, QStringLiteral("data"),
+                     { fileEntry(QStringLiteral("Data.exe"), QStringLiteral("C:\\x\\Data.exe")) });
+    QCOMPARE(m.rowCount({}), 1);
+    QCOMPARE(m.data(m.index(0), ResultsModel::CanRevealRole).toBool(), true); // indexed file row
+
+    m.setQuery(QStringLiteral("stuff"));
+    m.setFileResults(2, QStringLiteral("stuff"),
+                     { fileEntry(QStringLiteral("Stuff"), QStringLiteral("C:\\x\\Stuff"), true) });
+    QCOMPARE(m.rowCount({}), 1);
+    QCOMPARE(m.data(m.index(0), ResultsModel::CanRevealRole).toBool(), true); // folder row
 }
 
 void TstModel::hiddenCountCountsAllHidden_CUR02()

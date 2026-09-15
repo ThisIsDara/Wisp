@@ -499,6 +499,9 @@ Window {
             // 44px field row so it reads as one control.
             Item {
                 id: viewSeg
+                // 2026-09-15: above the full-surface dismissal catcher so a
+                // tab click both switches tabs AND closes the open menu.
+                z: Theme.catcherZ + 1
                 anchors.top: parent.top
                 anchors.right: parent.right
                 anchors.rightMargin: Theme.spaceMd
@@ -526,7 +529,10 @@ Window {
                         id: allHover
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: resultsModel.setFavoritesOnly(false)
+                        onClicked: {
+                            ctxMenu.closeMenu()
+                            resultsModel.setFavoritesOnly(false)
+                        }
                     }
                 }
 
@@ -553,7 +559,10 @@ Window {
                         id: favHover
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: resultsModel.setFavoritesOnly(true)
+                        onClicked: {
+                            ctxMenu.closeMenu()
+                            resultsModel.setFavoritesOnly(true)
+                        }
                     }
                 }
             }
@@ -604,7 +613,7 @@ Window {
                     // 05.1: right-click → shell opens the in-window curation
                     // menu at the cursor (list-space coords from the
                     // delegate's mapToItem — no popup windows, no transforms).
-                    onContextMenuRequested: (index, isHidden, isFavorite, x, y) => ctxMenu.openMenu(index, isHidden, isFavorite, x, y)
+                    onContextMenuRequested: (index, isHidden, isFavorite, canReveal, x, y) => ctxMenu.openMenu(index, isHidden, isFavorite, canReveal, x, y)
                 }
                 // Selection truth stays in ResultsModel (moveSelection /
                 // selectIndex / hover). This binding makes ListView.isCurrentItem
@@ -813,9 +822,12 @@ Window {
                 // surface for the whole feature). Toggling reveals dimmed rows
                 // for Unhide (CUR-03). Sits LEFT of the settings gear
                 // (2026-08-15) so the two right-side actions never overlap.
+                // 2026-09-15: All tab only — hidden rows can't be curated from
+                // the Favorites tab (no Hide there), so the toggle would be a
+                // no-op.
                 MouseArea {
                     id: showHiddenArea
-                    visible: resultsModel.hiddenCount > 0
+                    visible: resultsModel.hiddenCount > 0 && !resultsModel.favoritesOnly
                     anchors.right: settingsGear.left
                     anchors.rightMargin: Theme.spaceLg
                     anchors.verticalCenter: parent.verticalCenter
@@ -872,9 +884,14 @@ Window {
             // The dismissal catcher is a SIBLING below the menu (same parent,
             // z: 15) — a child anchored to resultsView would land in the
             // menu's coordinate space and cover the wrong region (H-01).
+            // 2026-09-15: the catcher fills the WHOLE surface, not just the
+            // list — right-clicks near the window corners, on the header or
+            // the footer previously fell through and left the menu stuck.
+            // Interactive chrome (tabs) is raised above it (viewSeg z) and
+            // also closes the menu, so actions still land.
             MouseArea {
                 id: ctxDismiss
-                anchors.fill: resultsView
+                anchors.fill: parent
                 z: Theme.catcherZ
                 visible: ctxMenu.visible
                 onClicked: ctxMenu.closeMenu()
@@ -884,14 +901,28 @@ Window {
                 property int targetIndex: -1
                 property bool targetIsHidden: false
                 property bool targetIsFavorite: false
+                property bool targetCanReveal: false
                 visible: false
-                width: Theme.menuWidth
-                height: Theme.menuItemHeight * 2 + Theme.spaceXs * 2
+                // 0.1.8: auto-fit — width follows the widest label so "Open
+                // file location" and "Remove from favorites" render in full,
+                // never elided (fixed 120px clipped both).
+                width: {
+                    const pad = Theme.spaceMd + Theme.spaceSm + Theme.spaceXs * 2
+                    return Math.max(Theme.menuWidth,
+                                    ctxFavLabel.implicitWidth + pad,
+                                    ctxHideLabel.implicitWidth + pad,
+                                    ctxRevealLabel.implicitWidth + pad)
+                }
+                // 0.1.8: item count varies — favorites tab drops "Hide" (a
+                // no-op there), revealable rows add "Open file location".
+                height: Theme.menuItemHeight * (1 + (resultsModel.favoritesOnly ? 0 : 1) + (targetCanReveal ? 1 : 0))
+                        + Theme.spaceXs * 2
                 z: Theme.menuZ
-                function openMenu(index, isHidden, isFavorite, x, y) {
+                function openMenu(index, isHidden, isFavorite, canReveal, x, y) {
                     targetIndex = index
                     targetIsHidden = isHidden
                     targetIsFavorite = isFavorite
+                    targetCanReveal = canReveal
                     // x/y arrive in resultsView space (delegate mapToItem);
                     // translate into shell space (this overlay is a sibling
                     // of the list), then clamp so the menu never hangs off
@@ -930,6 +961,7 @@ Window {
                         radius: Theme.menuRadius - Theme.spaceXs
                         color: ctxFavItem.containsMouse ? Theme.hoverBg : "transparent"
                         Text {
+                            id: ctxFavLabel
                             anchors.left: parent.left
                             anchors.leftMargin: Theme.spaceMd
                             anchors.right: parent.right
@@ -957,13 +989,18 @@ Window {
                         }
                     }
 
-                    // Item 2: hide/unhide.
+                    // Item 2: hide/unhide — hidden entirely in the Favorites
+                    // tab (2026-09-15): a favorited row stays visible there
+                    // (the favorited-but-hidden override), so Hide reads as a
+                    // silent no-op; curation belongs in the All tab.
                     Rectangle {
+                        visible: !resultsModel.favoritesOnly
                         width: parent.width
                         height: Theme.menuItemHeight
                         radius: Theme.menuRadius - Theme.spaceXs
                         color: ctxItem.containsMouse ? Theme.hoverBg : "transparent"
                         Text {
+                            id: ctxHideLabel
                             anchors.left: parent.left
                             anchors.leftMargin: Theme.spaceMd
                             anchors.right: parent.right
@@ -986,6 +1023,41 @@ Window {
                                     resultsModel.unhideSelected()
                                 else
                                     resultsModel.hideSelected()
+                            }
+                        }
+                    }
+
+                    // Item 3: open file location (0.1.8) — reveals the row's
+                    // file in Explorer. Shown only on revealable rows (File /
+                    // Lnk-with-target); the menu height adapts above.
+                    Rectangle {
+                        visible: ctxMenu.targetCanReveal
+                        width: parent.width
+                        height: Theme.menuItemHeight
+                        radius: Theme.menuRadius - Theme.spaceXs
+                        color: ctxRevealItem.containsMouse ? Theme.hoverBg : "transparent"
+                        Text {
+                            id: ctxRevealLabel
+                            anchors.left: parent.left
+                            anchors.leftMargin: Theme.spaceMd
+                            anchors.right: parent.right
+                            anchors.rightMargin: Theme.spaceSm
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Open file location"
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeMenu
+                            font.weight: Theme.fontWeightRegular
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+                        MouseArea {
+                            id: ctxRevealItem
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                ctxMenu.closeMenu()
+                                resultsModel.selectIndex(ctxMenu.targetIndex)
+                                launchController.revealSelected()
                             }
                         }
                     }

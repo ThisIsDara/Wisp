@@ -264,8 +264,9 @@ Item {
     // are mapped into the ListView space so the shell can position the
     // overlay without touching delegate transforms (delegates scale 1.04
     // when current — a delegate-scoped Popup landed wrong / never showed;
-    // observed 2026-08-11).
-    signal contextMenuRequested(int index, bool isHidden, bool isFavorite, real x, real y)
+    // observed 2026-08-11). canReveal (0.1.8): passed with the row so the
+    // shell can show/hide the "Open file location" item without re-querying.
+    signal contextMenuRequested(int index, bool isHidden, bool isFavorite, bool canReveal, real x, real y)
 
     MouseArea {
         id: hoverArea
@@ -282,7 +283,7 @@ Item {
                 // shell to open the curation context menu (CUR-02/03).
                 resultsModel.selectIndex(model.index)
                 var p = row.mapToItem(row.ListView.view, mouse.x, mouse.y)
-                contextMenuRequested(model.index, model.isHidden, model.isFavorite, p.x, p.y)
+                contextMenuRequested(model.index, model.isHidden, model.isFavorite, model.canReveal, p.x, p.y)
                 return
             }
             resultsModel.selectIndex(model.index) // visual sync — tick slides to the click

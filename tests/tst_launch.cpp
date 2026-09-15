@@ -85,6 +85,7 @@ private slots:
     void folderRowElevatedSilentlyNormal_D05();
     void revealCtrlEnter_LAUN03();
     void revealNoOpForApps();
+    void revealLnkRowResolves(); // 0.1.8: "Open file location" via Lnk target
     void revealFailureSignals();
     void launchTracking_D10();
     void uwpLaunchNotTracked();
@@ -412,10 +413,41 @@ void TstLaunch::revealCtrlEnter_LAUN03()
     QCOMPARE(dismisses, 1);
 }
 
-void TstLaunch::revealNoOpForApps()
+// 0.1.8: a Lnk row with a RESOLVED target now reveals — "Open file
+// location" on a shortcut opens to the actual exe's folder. The revealer
+// receives the resolved target, and success dismisses (D-13), matching the
+// file-row reveal exactly.
+void TstLaunch::revealLnkRowResolves()
 {
     ResultsModel model;
     model.setEntries({ lnkEntry(QStringLiteral("Alpha")) });
+    model.setQuery(QString());
+
+    LaunchController c;
+    c.setModel(&model);
+    QString revealedPath;
+    c.setRevealer([&](const QString &path) {
+        revealedPath = path;
+        return WinLaunch::LaunchResult::Launched;
+    });
+    int dismisses = 0;
+    c.setDismissHandler([&] { ++dismisses; });
+    QSignalSpy refused(&c, &LaunchController::adminRequestRefused);
+    QSignalSpy failed(&c, &LaunchController::launchFailed);
+
+    c.revealSelected();
+    QCOMPARE(revealedPath, QStringLiteral("C:\\apps\\alpha.exe"));
+    QCOMPARE(dismisses, 1);
+    QCOMPARE(refused.count(), 0);
+    QCOMPARE(failed.count(), 0);
+}
+
+void TstLaunch::revealNoOpForApps()
+{
+    ResultsModel model;
+    // The Broadened link resolve covers Lnk rows WITH a target; this fixture
+    // is the UWP row — explorer.exe is structurally unreachable for it.
+    model.setEntries({ uwpEntry(QStringLiteral("Store App")) });
     model.setQuery(QString());
 
     LaunchController c;
@@ -430,8 +462,9 @@ void TstLaunch::revealNoOpForApps()
     QSignalSpy refused(&c, &LaunchController::adminRequestRefused);
     QSignalSpy failed(&c, &LaunchController::launchFailed);
 
-    // LAUN-03 is file-only: Ctrl+Enter on an app row is a quiet no-op —
-    // the revealer is never called (T-04-09: no explorer.exe for non-files).
+    // 0.1.8: reveal covers File + Lnk-with-target only — a UWP row is a quiet
+    // no-op: the revealer is never called (T-04-09: no explorer.exe for
+    // non-file rows).
     c.revealSelected();
     QCOMPARE(reveals, 0);
     QCOMPARE(refused.count(), 0);

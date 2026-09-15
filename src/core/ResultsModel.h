@@ -47,6 +47,7 @@ public:
         IsHiddenRole, // 05.1: QML dims hidden rows via model.isHidden
         IsHideableRole, // 2026-08-15: remove-button visibility (CUR-04 guard parity)
         IsFavoriteRole, // 2026-08-15: QML star — true if the row's id (targetPath/aumid) is favorited
+        CanRevealRole, // 0.1.8: "Open file location" menu item may show for this row (File, or Lnk with a resolved target)
     };
 
     explicit ResultsModel(QObject *parent = nullptr);

@@ -269,6 +269,10 @@ QHash<int, QByteArray> ResultsModel::roleNames() const
         // 2026-08-15: isFavorite — the star button's filled/orange state,
         // driven by m_favoriteIds membership (id = targetPath/aumid).
         { IsFavoriteRole, "isFavorite" },
+        // 0.1.8: canReveal — the right-click menu shows "Open file location"
+        // only for rows revealSelected() can actually reveal (File rows, and
+        // Lnk rows with a resolved target).
+        { CanRevealRole, "canReveal" },
     };
 }
 
@@ -886,6 +890,16 @@ QVariant ResultsModel::data(const QModelIndex &idx, int role) const
         // 2026-08-15: favorites are per-ID (targetPath/aumid), so membership
         // survives rebuilds for ANY row type (file rows too).
         return m_favoriteIds.contains(idOf(entry));
+    case CanRevealRole:
+        // 0.1.8: "Open file location" reachable via revealSelected(). File
+        // rows (folders included — reveals the folder itself) and Lnk rows
+        // with a resolved target qualify; Uwp/Calculator/Command and
+        // unresolved links never do.
+        if (entry.source == AppEntry::Source::Uwp
+            || entry.source == AppEntry::Source::Calculator
+            || entry.source == AppEntry::Source::Command)
+            return false;
+        return !entry.targetPath.isEmpty();
     default:
         return {};
     }
