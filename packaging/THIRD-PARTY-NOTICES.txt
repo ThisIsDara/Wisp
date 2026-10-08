@@ -48,3 +48,19 @@ DLLs are NOT used for redistribution.
 =====================================================================
 Compliance evidence: see packaging/LGPL-COMPLIANCE.md and
 packaging/verify-lgpl.ps1 (dumpbin /DEPENDENTS + relink test).
+
+5. JetBrains Mono (SIL OFL-1.1)
+------------------------------
+wisp bundles the JetBrains Mono typeface (Regular + SemiBold) for the
+query field and the result titles. JetBrains Mono is licensed under the
+SIL Open Font License, Version 1.1, which expressly permits bundling and
+redistribution of the font files with an application.
+
+The full license text ships alongside the font assets and is also
+available at https://scripts.sil.org/OFL
+
+  - Font:    JetBrains Mono (c) 2020 The JetBrains Mono Project Authors
+  - Source:  https://github.com/JetBrains/JetBrainsMono
+  - License: qml/assets/fonts/JetBrainsMono-OFL.txt (also present in the
+             installed qml/assets/fonts directory)
+=====================================================================

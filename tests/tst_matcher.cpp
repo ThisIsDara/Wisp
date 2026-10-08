@@ -1,6 +1,8 @@
 #include <QElapsedTimer>
 #include <QtTest>
 
+#include <cmath>
+
 #include "core/FuzzyMatcher.h"
 
 // Pure scoring contract (D-04..D-07): priority ladder exact > prefix >
@@ -37,6 +39,7 @@ private slots:
     void matchRangesExact();
     void noCutoff();
     void tieBreakDeterminism();
+    void scoreFastParity();
     void perfSmoke();
 };
 
@@ -135,6 +138,84 @@ void TstMatcher::tieBreakDeterminism()
     // alphabetical ordering of ties is the MODEL's job (asserted in tst_model).
     QCOMPARE(score(QStringLiteral("cal"), QStringLiteral("Calc")).score,
              score(QStringLiteral("cal"), QStringLiteral("Calculator")).score);
+}
+
+// 2026-09-15: scoreFast() is the cache-driven twin of score(), and BOTH are on
+// the live query path (ResultsModel + AppProvider rank through them). Any
+// divergence would silently change user-visible ranking, so assert byte-identical
+// scores AND match ranges across a structured corpus (camelCase, separators,
+// non-ASCII, trailing space) plus an exhaustive sweep of short queries.
+void TstMatcher::scoreFastParity()
+{
+    const QStringList names = {
+        QStringLiteral("Steam"),
+        QStringLiteral("Steam Helper"),
+        QStringLiteral("steam"),
+        QStringLiteral("SteamWorks"),          // camelCase mid-name boundary
+        QStringLiteral("my-steam_tool"),       // separator boundaries
+        QStringLiteral("MS Visual Studio"),    // space boundary
+        QStringLiteral("a"), QStringLiteral("ab"),
+        QStringLiteral("A B C"),
+        QStringLiteral("Adobe Photoshop"),     // two capital starts
+        QStringLiteral("STRASSE"),             // uppercase run, no camel boundary
+        QStringLiteral("café_runner"),         // non-ASCII
+        QStringLiteral("Ünïcödé App"),         // non-ASCII leading
+        QStringLiteral("tab\tsep"),
+        QStringLiteral("trailing "),
+        QStringLiteral(""),
+        QStringLiteral("x/y.z_w-q"),           // every separator char
+    };
+    const QStringList queries = {
+        QStringLiteral(""), QStringLiteral("a"), QStringLiteral("s"),
+        QStringLiteral("st"), QStringLiteral("steam"), QStringLiteral("Steam"),
+        QStringLiteral("sh"), QStringLiteral("mvs"), QStringLiteral("mvs v"),
+        QStringLiteral("ad"), QStringLiteral("aps"), QStringLiteral("adps"),
+        QStringLiteral("caf"), QStringLiteral("café"), QStringLiteral("ün"),
+        QStringLiteral("xyz"), QStringLiteral("x"), QStringLiteral("zzzz"),
+        QStringLiteral("tab"), QStringLiteral("strasse"), QStringLiteral("stea"),
+    };
+
+    for (const QString &name : names) {
+        QString lower;
+        QVector<char> bounds;
+        FuzzyMatcher::buildCaches(name, &lower, &bounds);
+        for (const QString &q : queries) {
+            const FuzzyMatcher::Result slow = FuzzyMatcher::score(q, name);
+            const FuzzyMatcher::Result fast = FuzzyMatcher::scoreFast(q.toLower(), lower, bounds);
+            if (slow.score != fast.score)
+                QFAIL(qPrintable(QStringLiteral("score mismatch q='%1' name='%2': %3 vs %4")
+                                     .arg(q, name).arg(slow.score).arg(fast.score)));
+            if (slow.ranges != fast.ranges)
+                QFAIL(qPrintable(QStringLiteral("range mismatch q='%1' name='%2'").arg(q, name)));
+        }
+    }
+
+    // Exhaustive short-query sweep so a tier/boundary edge case in generated
+    // combinations can't slip past the hand-picked corpus.
+    const QString alphabet = QStringLiteral("abcs ");
+    const QStringList micro = { QStringLiteral("a"), QStringLiteral("ab"), QStringLiteral("abc"),
+                                QStringLiteral("aB"), QStringLiteral("A b"), QStringLiteral("a-b"),
+                                QStringLiteral("As"), QStringLiteral("aS") };
+    for (const QString &name : micro) {
+        QString lower;
+        QVector<char> bounds;
+        FuzzyMatcher::buildCaches(name, &lower, &bounds);
+        for (int len = 1; len <= 3; ++len) {
+            const int total = int(std::pow(alphabet.size(), len));
+            for (int code = 0; code < total; ++code) {
+                QString q;
+                int c = code;
+                for (int k = 0; k < len; ++k) {
+                    q.append(alphabet.at(c % alphabet.size()));
+                    c /= alphabet.size();
+                }
+                const FuzzyMatcher::Result slow = FuzzyMatcher::score(q, name);
+                const FuzzyMatcher::Result fast = FuzzyMatcher::scoreFast(q.toLower(), lower, bounds);
+                if (slow.score != fast.score || slow.ranges != fast.ranges)
+                    QFAIL(qPrintable(QStringLiteral("sweep mismatch q='%1' name='%2'").arg(q, name)));
+            }
+        }
+    }
 }
 
 void TstMatcher::perfSmoke()

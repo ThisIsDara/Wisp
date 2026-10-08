@@ -1,5 +1,7 @@
 #include <QtTest>
 
+#include <QDir>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
@@ -30,6 +32,7 @@ private slots:
     void scanRootsDropsEmptyAndDuplicates();
     void scanIntervalClamped();
     void scanKeysSurviveReopen();
+    void corruptRootsDoNotBecomePhantomRoots_20261008();
 };
 
 void TstSettings::missingKeyDefaultsTo0078D4()
@@ -131,6 +134,29 @@ void TstSettings::scanRootsRoundTrip()
     SettingsStore store(iniPath);
     store.setScanRoots({ desktop, drive });
     QCOMPARE(store.scanRoots(), expectedNative);
+
+    // 2026-10-08: the live INI came back with ZERO backslashes —
+    // "roots=C:sersrickppDataoamingicrosoftindowstart Menurograms". A root
+    // containing a SPACE (Program Files, AppData, "Start Menu\Programs" — most
+    // real roots) is the case that matters; the space-free case above passed and
+    // hid the problem.
+    //
+    // The encoding itself is QSettings' INI list format, which ESCAPES each
+    // backslash as \\ on write and unescapes on read. Hand-editing this file with
+    // single backslashes silently destroys every root — worth stating here so
+    // nobody repairs the INI by hand again.
+    const QStringList spaced = {
+        QStringLiteral("C:/Users/me/AppData/Local/Discord"),
+        QStringLiteral("C:/Program Files/Steam"),
+        QStringLiteral("C:/Users/me/Downloads/Netch/Netch"),
+    };
+    const QStringList spacedNative = {
+        QStringLiteral("C:\\Users\\me\\AppData\\Local\\Discord"),
+        QStringLiteral("C:\\Program Files\\Steam"),
+        QStringLiteral("C:\\Users\\me\\Downloads\\Netch\\Netch"),
+    };
+    store.setScanRoots(spaced);
+    QCOMPARE(store.scanRoots(), spacedNative);
 }
 
 void TstSettings::scanRootsDropsEmptyAndDuplicates()
@@ -144,6 +170,38 @@ void TstSettings::scanRootsDropsEmptyAndDuplicates()
     store.setScanRoots({ QStringLiteral(""), QStringLiteral("C:/a"),
                          QStringLiteral("C:/a"), QStringLiteral("C:/b") });
     QCOMPARE(store.scanRoots(), expected);
+}
+
+// 2026-10-08: the live INI held a corrupt `roots=@Invalid()`. toStringList() on
+// that plain string yields a ONE-element list, so the app gained a root literally
+// named "@Invalid()" and scanned a directory that cannot exist. A corrupt or
+// hand-mangled value must degrade to "no roots" (the D-09 no-locations state the
+// UI already handles), never to a phantom one.
+void TstSettings::corruptRootsDoNotBecomePhantomRoots_20261008()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString iniPath = dir.filePath(QStringLiteral("wisp.ini"));
+
+    QSettings s(iniPath, QSettings::IniFormat);
+    s.setValue(QStringLiteral("scan/roots"), QStringLiteral("@Invalid()"));
+    s.sync();
+
+    SettingsStore store(iniPath);
+    QCOMPARE(store.scanRoots(), QStringList());
+
+    // A path that lost its separators must be rejected, not scanned as-is.
+    s.setValue(QStringLiteral("scan/roots"),
+               QStringLiteral("C:sersrickppDataoamingicrosoft"));
+    s.sync();
+    QCOMPARE(store.scanRoots(), QStringList());
+
+    // A real root still reads back. Established through the real setter so the
+    // INI is encoded by QSettings itself — hand-writing the value here would
+    // double-escape it, which is precisely the mistake that destroyed the live
+    // roots in the first place.
+    store.setScanRoots({ QStringLiteral("C:/Program Files/Steam") });
+    QCOMPARE(store.scanRoots(), QStringList{QStringLiteral("C:\\Program Files\\Steam")});
 }
 
 void TstSettings::scanIntervalClamped()

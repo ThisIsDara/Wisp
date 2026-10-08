@@ -1,4 +1,7 @@
 #include <QApplication>
+#include <QDirIterator>
+#include <QFontDatabase>
+#include <QQuickStyle>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -191,6 +194,39 @@ int main(int argc, char *argv[])
     resultsModel.setHideStore([&curationStore](const QString &id, bool hidden) {
         if (hidden) curationStore.hide(id); else curationStore.show(id);
     });
+    // 2026-10-08: the RE-READ side of the same store, so a removal sticks.
+    // setHideStore only writes; every result batch (a typed query's provider
+    // fan-out, or a rescan rebuilding the default list) arrives with fresh
+    // entries whose `hidden` is false, so the in-memory mark was discarded each
+    // time and the row the user had just removed reappeared. Nothing else
+    // re-read the store for index rows - fileSearch.setAddedSource below covers
+    // manual picks only.
+    resultsModel.setHiddenSource([&curationStore] { return curationStore.hiddenIds(); });
+    // 2026-10-08: removal is its own axis, NOT a hide. Hiding keeps the row
+    // reachable through "Show hidden (N)" by design (CUR-03); the user asked for
+    // a removed duplicate to leave the app entirely, so it gets its own store
+    // group, is filtered unconditionally, and never inflates hiddenCount.
+    //
+    // The removal is bound to the scan root that owns the entry, so removing a
+    // directory and re-adding it brings its apps back (user: "right now Discord
+    // is gone forever even though I removed the directory from the app and re
+    // added the directory that contains Discord"). The root is resolved here
+    // because this is where the roots list lives; the model only knows paths.
+    resultsModel.setRemoveStore([&curationStore, &settingsStore](const QString &id, bool removed) {
+        if (removed) {
+            curationStore.remove(
+                id, CurationStore::owningRoot(settingsStore.scanRoots(), id));
+        } else {
+            curationStore.restore(id);
+        }
+    });
+    // Prune BEFORE reading, so a root that was removed drops its records and the
+    // next batch stops filtering them. Driven from the read side rather than
+    // from the three setScanRoots() call sites, so no write path can forget it.
+    resultsModel.setRemovedSource([&curationStore, &settingsStore] {
+        curationStore.pruneRemovals(settingsStore.scanRoots());
+        return curationStore.removedIds();
+    });
     // 2026-08-15: favorites seam — bind the store and seed the persisted set
     // at startup so the Favorites tab reflects prior sessions. Favorites are
     // id-based (targetPath/aumid), so file rows and manual picks favorite
@@ -245,7 +281,40 @@ int main(int argc, char *argv[])
     IconCache iconCache;                 // default cap 500 ≈ 8 MB (D-03)
     auto *iconProvider = new IconProvider(&iconCache, &WinIconExtractor::extract);
 
+    // 2026-10-08 (restored): register the bundled JetBrains Mono faces BEFORE the
+    // engine loads any QML. Theme.fontFamilyMono names the family by name, so
+    // without this registration Qt silently falls back to the default UI font and
+    // the query field / result titles quietly revert to Segoe — which is exactly
+    // the regression this block was lost in once already.
+    //
+    // The module's own root is walked for .ttf rather than hard-coding a
+    // resource path: qt_add_qml_module preserves the directory of each RESOURCES
+    // entry inside the module, so the real path carries a doubled "qml/"
+    // segment and is easy to get wrong. Discovering them cannot drift.
+    {
+        int faces = 0;
+        const QString moduleRoot = QStringLiteral(":/qt/qml/wisp");
+        QDirIterator fonts(moduleRoot, QStringList{QStringLiteral("*.ttf")},
+                           QDir::Files, QDirIterator::Subdirectories);
+        while (fonts.hasNext()) {
+            const int id = QFontDatabase::addApplicationFont(fonts.next());
+            if (id < 0)
+                qWarning() << "wisp: bundled font failed to load:" << fonts.filePath();
+            else
+                ++faces;
+        }
+        if (faces == 0)
+            qWarning() << "wisp: no bundled fonts found under" << moduleRoot
+                       << "- mono text will fall back to the system UI font";
+    }
+
     QQmlApplicationEngine engine;
+    // 2026-10-08: force the Basic control style. Qt's native Windows style
+    // silently DISCARDS every custom contentItem/background (ScrollBar,
+    // TextField), so the scrollbar fix and the search field only ever render
+    // under Basic - the style the whole UI was designed against. MUST run
+    // before the engine loads any QML control.
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
     engine.addImageProvider(QStringLiteral("wispicons"), iconProvider);
     engine.rootContext()->setContextProperty("resultsModel", &resultsModel);
     engine.rootContext()->setContextProperty("launchController", &launch);

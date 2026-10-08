@@ -35,6 +35,13 @@ class ResultsModel : public QAbstractListModel
     Q_PROPERTY(bool favoritesOnly READ favoritesOnly WRITE setFavoritesOnly NOTIFY favoritesOnlyChanged) // 2026-08-15: "Favorites" tab mode
     Q_PROPERTY(int favoriteCount READ favoriteCount) // 2026-08-15: persisted favorite-id count — startup tab default (All if 0)
     Q_PROPERTY(QString calculatorResult READ calculatorResult NOTIFY calculatorResultChanged)
+    // ── Duplicate detection (2026-10-08) ────────────────────────────────
+    // Two rows are duplicates when they share a display title — the same app listed
+    // more than once. Startup-folder autostart entries are excluded. Pure string
+    // work: no file I/O, so it is safe to recompute on every order change. See
+    // ResultsModel.cpp's duplicateKeyOf() for the measured rationale.
+    Q_PROPERTY(int duplicateGroupCount READ duplicateGroupCount NOTIFY duplicatesChanged) // footer chip
+    Q_PROPERTY(QVariantList duplicateGroups READ duplicateGroups NOTIFY duplicatesChanged) // panel model
 
 public:
     enum Roles {
@@ -48,6 +55,7 @@ public:
         IsHideableRole, // 2026-08-15: remove-button visibility (CUR-04 guard parity)
         IsFavoriteRole, // 2026-08-15: QML star — true if the row's id (targetPath/aumid) is favorited
         CanRevealRole, // 0.1.8: "Open file location" menu item may show for this row (File, or Lnk with a resolved target)
+        IsDuplicateRole, // 2026-10-08: this row has a same-name/same-folder twin
     };
 
     explicit ResultsModel(QObject *parent = nullptr);
@@ -95,6 +103,47 @@ public:
     // tests inject spies. UI thread only (SettingsStore precedent).
     using HideStore = std::function<void(const QString &id, bool hidden)>;
     void setHideStore(HideStore fn);
+    // Curation RE-READ seam — the counterpart to setHideStore above. setHideStore
+    // only writes; this reads the persisted hidden ids back so every incoming
+    // result batch can be stamped (see stampCurationHidden).
+    //
+    // Without it, a removal only lived in the model's in-memory `hidden` flags,
+    // which every result batch overwrites: a typed query rebuilt its rows from
+    // the providers (hidden=false), and a directory rescan did the same — so the
+    // row the user just removed came straight back, which is what "it just goes
+    // to hidden, I still see the app" was. Persistence was already there; nothing
+    // ever re-read it for index rows.
+    //
+    // Read once per batch (not per row) — the store is a small INI-backed set and
+    // this runs on the query hot path.
+    using HiddenSource = std::function<QSet<QString>()>;
+    void setHiddenSource(HiddenSource fn);
+    // ── Removed (2026-10-08) ───────────────────────────────────────────────
+    // A removal is NOT a hide. hideSelected/hidePath keep the row reachable via
+    // "Show hidden (N)" on purpose (CUR-03); the user asked for a removed
+    // duplicate to leave the app entirely, so removal gets its own axis:
+    //   - rows are filtered out UNCONDITIONALLY, including in show-hidden mode;
+    //   - they never reach hiddenCount(), so the footer never offers to restore
+    //     them and toggling Show hidden cannot bring one back;
+    //   - nothing is deleted — the file stays on disk, and a rescan of its
+    //     directory still honours the removal.
+    using RemovedSource = std::function<QSet<QString>()>;
+    void setRemovedSource(RemovedSource fn);
+    void setRemoveStore(std::function<void(const QString &, bool)> fn);
+    // Remove one entry by path — what the duplicates panel's Remove calls.
+    // Returns false only for an empty path.
+    Q_INVOKABLE bool removePath(const QString &path);
+    // True when the entry is removed — filtered before the hidden check, so it
+    // outranks show-hidden mode.
+    bool isRemoved(const AppEntry &e) const;
+    // Refresh the cached removed ids. Cheap (one store read) and only re-runs
+    // when the order may have changed.
+    void refreshRemoved() const;
+    // Stamp `hidden` onto a freshly arrived batch from the curation store.
+    // Never CLEARS a flag - manual picks arrive pre-stamped by
+    // fileSearch.setAddedSource, and an incoming false must not undo that.
+    void stampCurationHidden(QVector<AppEntry> &entries);
+    void stampCurationHidden(QVector<ScoredEntry> &rows);
 
     // ── 2026-08-15 favorites surface ("Favorites" tab) ──
     // Favorites are tracked as a SET of ids (targetPath/aumid — same identity
@@ -108,6 +157,40 @@ public:
     // preserving the active query (never a setEntries reset).
     Q_INVOKABLE void favoriteSelected();   // mark the selected row favorite (persist true)
     Q_INVOKABLE void unfavoriteSelected(); // unmark the selected row (persist false)
+    // 2026-09-15: rebuild the view after a favorite/unfavorite mutation. Routes
+    // through the provider fan-out when providers are wired (production), else
+    // the legacy synchronous builders — see the .cpp for why calling those
+    // directly emptied the user's query results.
+    void rebuildAfterMutation();
+    // 2026-09-15: re-emit IsFavoriteRole for every row sharing the selected
+    // row's id, so the hover star repaints after a toggle without a full reset.
+    void emitFavoriteChangedForCurrent();
+    // 2026-10-08: hide one entry by path (duplicates panel "Remove").
+    // Reversible — marks hidden + persists through the hide store, exactly
+    // like hideSelected; nothing is deleted from disk.
+    Q_INVOKABLE bool hidePath(const QString &path);
+    // ── Duplicate detection (2026-10-08) ────────────────────────────────
+    // "display name + containing folder name", both case-folded. Empty when the
+    // entry can't be keyed (no path), which excludes synthetic rows.
+    static QString duplicateKeyOf(const AppEntry &e);
+    // True when the path sits under a Startup folder — an autostart item, which
+    // is excluded from duplicate analysis (see duplicateKeyOf).
+    static bool isAutostartPath(const QString &path);
+    // Rebuild m_duplicateRowKeys / m_duplicateGroups from the CURRENT m_order.
+    // Call after anything that changes which rows are visible.
+    void recomputeDuplicates();
+    // Authoritative invalidation hook, connected to modelReset / rowsInserted /
+    // rowsRemoved / layoutChanged. See the constructor comment for why the
+    // per-mutator trailing calls are not sufficient on their own.
+    void onOrderChanged();
+    // Lazy recompute, safe from const readers (data()). Returns true if the
+    // duplicate set/count actually changed.
+    bool refreshDuplicates() const;
+    int duplicateGroupCount() const { refreshDuplicates(); return m_duplicateGroups.size(); }
+    QVariantList duplicateGroups() const;
+    // Row indices (into m_order) whose entry belongs to a duplicate group —
+    // backs the IsDuplicateRole badge.
+    bool isDuplicateRow(int row) const;
     bool favoritesOnly() const;
     Q_INVOKABLE void setFavoritesOnly(bool on); // "All | Favorites" tab toggle
     int favoriteCount() const; // 2026-08-15: m_favoriteIds.size() — persisted favorites
@@ -149,6 +232,7 @@ signals:
     void hiddenCountChanged();  // 05.1: QML footer "Show hidden (N)" visibility
     void favoritesOnlyChanged(); // 2026-08-15: "Favorites" tab toggle
     void calculatorResultChanged();
+    void duplicatesChanged(); // 2026-10-08: duplicate set/count changed (footer chip + badges)
 
 private:
     // Display row: resolved by data()/snapshotSelected() against m_entries
@@ -167,6 +251,11 @@ private:
     // asc (D-01/D-05), caps file rows at kMaxFileRows (D-03), and applies the
     // kPathMatchScore base tier for path-only matches (D-07).
     void mergeFiles();
+    // 2026-09-15 perf: the cached case-folded displayName for a row (mirrors
+    // entryAt's four origins). Falls back to folding on the fly if a channel's
+    // cache is somehow missing, so ordering can never be wrong — and can never
+    // index out of range — if a fill site is added later.
+    QString foldedNameFor(const Row &row) const;
     // 2026-08-15: favorites mode — true if the row's id is in m_favoriteIds.
     bool isFavoriteRow(const Row &row) const;
     // 2026-08-15: when m_favoritesOnly, prunes m_order/m_ranges to favorite
@@ -192,6 +281,17 @@ private:
     QVector<AppEntry> m_entries;       // always sorted alphabetically (case-insensitive)
     QVector<QString> m_entriesLower;   // lowercased displayName cache for fast scoring
     QVector<QVector<char>> m_entriesBoundaries; // isBoundary per char (precomputed)
+    // 2026-09-15 perf: case-folded displayName, parallel to each channel's
+    // entries. The alphabetical tie-breaks (D-01/D-05) compared
+    // `displayName.toCaseFolded()` INSIDE their comparators, which allocated a
+    // fresh QString per comparison — O(N log N) allocations per keystroke, and
+    // mergeFiles ran up to three such sorts per query. Caching the fold turns
+    // those into plain QString compares. Populated wherever the channel is
+    // (re)filled; always the exact `displayName.toCaseFolded()` of the row at
+    // the same index, so ordering is byte-identical to the uncached version.
+    QVector<QString> m_entriesFolded;
+    QVector<QString> m_fileEntriesFolded;
+    QVector<QString> m_addedEntriesFolded;
     QVector<AppEntry> m_fileEntries;   // latest accepted file set (D-15 generation-guarded)
     QVector<AppEntry> m_addedEntries;  // D-14 default-list channel: latest accepted
                                        // added-only snapshot (manual picks, CUR-04),
@@ -214,6 +314,30 @@ private:
     FrecencyMapFn m_frecencyMapFn; // batched — one lock per query (hot path)
     AppEntry m_calcEntry;        // synthetic calculator row (when query is math)
     bool m_hasCalc = false;
+    // 2026-10-08: duplicate detection cache, rebuilt by recomputeDuplicates().
+    // m_duplicateRowKeys is a SET OF KEYS (not row indices) on purpose: m_order
+    // is rebuilt constantly, and keying by identity survives reordering, so the
+    // badge stays correct without re-running detection per repaint. Mutable +
+    // dirty-flagged so CONST readers (data(), duplicateGroups()) can refresh
+    // lazily — that way every order-building site only has to mark it dirty,
+    // instead of ~11 of them having to remember to recompute (and the
+    // progressive-insert path in applyProviderResult never resets the model at
+    // all, so it would have been missed).
+    mutable QSet<QString> m_duplicateRowKeys;
+    mutable QVector<QVariantMap> m_duplicateGroups; // { name, count, paths: QStringList }
+    mutable bool m_duplicatesDirty = true;
+    // Armed by a const reader that refreshed and saw a change, since it cannot
+    // emit. recomputeDuplicates() (end of each order mutator) fires it.
+    mutable bool m_duplicatesNotifyPending = false;
+    HiddenSource m_hiddenSource;   // curation re-read side (see setHiddenSource)
+    RemovedSource m_removedSource;
+    std::function<void(const QString &, bool)> m_removeStore;
+    // Cached removed ids. NOT lazily dirty-flagged like the duplicate cache:
+    // isRemoved() runs inside the display-order loops for every row, and a store
+    // read per row would be absurd. Refreshed once per order build instead —
+    // every path that can change the order calls refreshRemoved().
+    mutable QSet<QString> m_removedIds;
+    mutable bool m_removedLoaded = false;
     // Async scoring — null pool = synchronous (tests)
     struct AppResult {
         quint64 gen = 0;

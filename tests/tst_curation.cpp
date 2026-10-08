@@ -67,6 +67,7 @@ private slots:
     void missingGroupReturnsEmpty();
     void uninstalledIdInert_CUR02();
     void uwpHideByAumid_CUR02();
+    void removalIsBoundToItsScanRoot_20261008();
 };
 
 void TstCuration::allowlistedAppsVisible_CUR01()
@@ -306,6 +307,92 @@ void TstCuration::uwpHideByAumid_CUR02()
 
     CurationStore reloaded(iniPath);
     QVERIFY(reloaded.hiddenIds().contains(QStringLiteral("SomeFamily!SomeAppId")));
+}
+
+// 2026-10-08 (user: "right now Discord is gone forever even though I removed the
+// directory from the app and re added the directory that contains Discord").
+// A removal must be bound to the scan root that owns it: drop the root, the
+// removals it owned go with it, and re-adding brings those apps back.
+void TstCuration::removalIsBoundToItsScanRoot_20261008()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString ini = dir.filePath(QStringLiteral("wisp.ini"));
+    const QString root = QStringLiteral("C:\\Programs");
+    const QString nested = QStringLiteral("C:\\Programs\\Steam");
+    const QString discord = root + QStringLiteral("\\Discord\\Discord.lnk");
+    const QString steam = nested + QStringLiteral("\\Steam.lnk");
+    const QString pick = QStringLiteral("C:\\Users\\me\\Tools\\thing.exe");
+
+    // Owning-root resolution: longest match wins, the separator boundary is
+    // respected, and a path under no root has no owner.
+    QCOMPARE(CurationStore::owningRoot({root, nested}, discord), root);
+    QCOMPARE(CurationStore::owningRoot({root, nested}, steam), nested);
+    QCOMPARE(CurationStore::owningRoot({root}, steam), root);      // parent still owns
+    QCOMPARE(CurationStore::owningRoot({root}, pick), QString());  // no root owns it
+    // "C:\Program" must not own "C:\ProgramData\x" (prefix, not a path segment).
+    QCOMPARE(CurationStore::owningRoot({QStringLiteral("C:\\Program")},
+                                       QStringLiteral("C:\\ProgramData\\x.lnk")),
+             QString());
+    // Case-insensitive, as Windows paths are. The match returns the root AS
+    // CONFIGURED (not the spelling of the path that was matched) so the value
+    // stored against a removal compares equal to what scanRoots() hands back at
+    // prune time - otherwise a differently-cased root would orphan its records.
+    QCOMPARE(CurationStore::owningRoot({QStringLiteral("C:\\PROGRAMS")}, discord),
+             QStringLiteral("C:\\PROGRAMS"));
+
+    {
+        CurationStore store(ini);
+        store.remove(discord, CurationStore::owningRoot({root, nested}, discord));
+        store.remove(steam, CurationStore::owningRoot({root, nested}, steam));
+        store.remove(pick, CurationStore::owningRoot({root, nested}, pick));
+        QCOMPARE(store.removedIds().size(), 3);
+    }
+
+    // Removing the PARENT root while the nested one stays must keep the nested
+    // root's removal and drop only the parent's.
+    {
+        CurationStore store(ini);
+        store.pruneRemovals({nested});
+        const QSet<QString> ids = store.removedIds();
+        QVERIFY2(!ids.contains(discord), "a removal must die with the root that owned it");
+        QVERIFY(ids.contains(steam));
+        QVERIFY2(ids.contains(pick), "a manual pick belongs to no root and must survive");
+    }
+
+    // Dropping every root clears every root-bound removal; the manual pick stays.
+    {
+        CurationStore store(ini);
+        store.pruneRemovals({});
+        QCOMPARE(store.removedIds(), QSet<QString>{pick});
+    }
+
+    // Re-adding the root and removing again is a clean cycle - the round trip
+    // the user asked for.
+    {
+        CurationStore store(ini);
+        store.pruneRemovals({root, nested});
+        store.remove(discord, CurationStore::owningRoot({root, nested}, discord));
+        QVERIFY(store.removedIds().contains(discord));
+
+        // A second store (a fresh launch) still sees it.
+        CurationStore reopened(ini);
+        QVERIFY(reopened.removedIds().contains(discord));
+
+        // ...and restoring by hand brings the app back immediately.
+        reopened.restore(discord);
+        QVERIFY(!reopened.removedIds().contains(discord));
+    }
+
+    // A pre-scoping record (legacy value "1") is owned by no root, so the first
+    // prune clears it - which is how an old permanent removal heals.
+    {
+        CurationStore legacy(ini);
+        legacy.remove(discord, QStringLiteral("1"));
+        legacy.pruneRemovals({root});
+        QVERIFY2(!legacy.removedIds().contains(discord),
+                 "a legacy unowned record must be cleared, not kept forever");
+    }
 }
 
 QTEST_MAIN(TstCuration)

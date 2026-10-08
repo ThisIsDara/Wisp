@@ -159,9 +159,14 @@ void FileSearch::dispatch()
                 if (queryFn) {
                     const QueryResult idx = queryFn(q);
                     for (const AppEntry &e : idx.entries) {
-                        if (seen.contains(e.targetPath.toCaseFolded()))
+                        // 2026-09-15 perf: fold once per row. The dedupe probe
+                        // and the insert used to each build their own
+                        // toCaseFolded() copy — two allocations per index row,
+                        // and the default list walks the WHOLE index.
+                        const QString folded = e.targetPath.toCaseFolded();
+                        if (seen.contains(folded))
                             continue; // manual pick already renders this path
-                        seen.insert(e.targetPath.toCaseFolded());
+                        seen.insert(folded);
                         out.append(e);
                     }
                 }

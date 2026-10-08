@@ -28,8 +28,18 @@ class FileIndex
 public:
     struct IndexEntry {
         QString path;
-        QString matchKey; // path.toCaseFolded() — pre-folded at insert
+        QString matchKey; // path.toCaseFolded() - pre-folded at insert
         bool isFolder = false;
+        // 2026-10-08: resolved launch target for .lnk entries, empty for
+        // everything else. Resolved ONCE during the walk (the walk runs on the
+        // scan worker and memoises unchanged directories, so the COM cost is
+        // paid only when a directory actually changes) and persisted, so
+        // duplicate detection is pure string work at query time.
+        //
+        // This is the honest identity of an entry. The display name is not: on
+        // the real index, "Discord" matched a shortcut, a second shortcut, the
+        // installed binary AND a versioned build folder's copy of that binary.
+        QString launchTarget;
     };
 
     struct WalkOutcome {
@@ -102,7 +112,10 @@ private:
     // stale-memo/entries mismatch untrustworthy — load() rejects it and the
     // first scan re-walks from scratch. Persisted format is otherwise
     // unchanged.
-    static constexpr quint32 kFormatVersion = 3;
+    // 2026-10-08: bumped 3 -> 4 for the per-entry launchTarget field. A v3 file
+    // has no resolved targets, so load() rejects it and the first scan re-walks
+    // and re-resolves - the same rebuild path a format bump has always used.
+    static constexpr quint32 kFormatVersion = 4;
     static constexpr int kCandidateCap = 1000; // research OQ5; raised 07-06 — the default list
                                              // IS the index now (executable launcher)
     static constexpr int kMaxDepth = 64;      // T-07-01 defense-in-depth

@@ -30,6 +30,38 @@ Item {
     // lookup + id build (ResultsModel IsFavoriteRole). Masking saves those on
     // every delegate "recycle" during scroll and tab switches.
     readonly property bool fav: model.isFavorite
+    // 2026-10-08: the duplicate flag.
+    property bool dup: model.isDuplicate
+    // ── Duplicate badge gutter (2026-10-08) ──
+    // X of the badge's RIGHT edge, measured from the row's left edge, so the
+    // title reserves exactly the same span (one source of truth).
+    //
+    // The right gutter holds, walking inward from the right edge: the hover
+    // remove button (24), the favorite star (24 — shown when the row is
+    // favorited or hovered), and the 1-9 keycap (16 — only while a query is
+    // typed and the row is NOT hovered).
+    //
+    // This property exists because the first version of the badge simply sat at
+    // the far right, which is exactly where the keycap lives - the user's rows
+    // rendered "duplicate 2" with the two glyphs on top of each other.
+    //
+    // FIXED slot, deliberately not computed per state. The gutter's contents are
+    // transient (star on favorite/hover, remove on hover, keycap only while a
+    // query is typed), so a badge that flowed around them sat at a DIFFERENT x
+    // on every row - two duplicate rows in the same list had their "duplicate"
+    // labels visibly out of line. Being a property of the ROW rather than of
+    // its hover/favorite state, it has to render in the same place on every
+    // duplicate row.
+    //
+    // The reservation is the WIDEST the gutter can ever get (remove button + star
+    // + keycap = 24+4+24+4+16), which costs trailing whitespace on rows that
+    // currently show less chrome. That is the right trade: a constant, slightly
+    // airy right edge over a ragged one, and it makes overlap impossible by
+    // construction rather than by enumerating states.
+    readonly property real dupRightEdge: width - Theme.rowRightInset
+                                          - Theme.removeButtonSize - Theme.spaceXs
+                                          - Theme.removeButtonSize - Theme.spaceXs
+                                          - numHint.width - Theme.spaceSm
 
     // Selected-row emphasis (2026-08-11 user redesign): the current row grows
     // slightly. GROW FROM THE LEFT EDGE (origin Left) — a center origin shifts
@@ -125,12 +157,23 @@ Item {
         // 2026-08-15: while hovered the remove button AND the favorite star occupy
         // the right ~64px — the title shortens so it never runs under them.
         // A favorited-but-not-hovered row still reserves the star's slot.
-        anchors.rightMargin: row.hovered
-                             ? Theme.spaceSm + Theme.removeButtonSize + Theme.spaceXs
-                               + Theme.removeButtonSize + Theme.spaceSm
-                             : (row.fav || hintVisible
-                                ? Theme.spaceSm + Theme.removeButtonSize + Theme.spaceXs
-                                : Theme.spaceMd)
+        // 2026-09-15: the reserved zone now starts at rowRightInset (16px) instead
+        // of spaceSm (8px) so the title clears the overlay scrollbar too —
+        // otherwise the tail of a long name renders underneath the thumb.
+        // 2026-10-08: on a duplicate row the reserved zone is derived from
+        // row.dupRightEdge (the badge's right edge) plus the badge's own width,
+        // so the title can never slide under it NOR under the keycap. Rows
+        // without a badge keep the original expression untouched.
+        anchors.rightMargin: dupBadge.visible
+                             ? Theme.rowRightInset + (row.width - row.dupRightEdge)
+                               + dupBadge.width + Theme.spaceXs
+                             : Theme.rowRightInset
+                               + (row.hovered
+                                  ? Theme.removeButtonSize + Theme.spaceXs
+                                    + Theme.removeButtonSize + Theme.spaceSm
+                                  : (row.fav || hintVisible
+                                     ? Theme.removeButtonSize + Theme.spaceXs
+                                     : Theme.spaceXs))
         anchors.verticalCenter: parent.verticalCenter
 
         // Title line box (LAUN-06, D-05..D-08): the ONLY line that carries
@@ -252,6 +295,10 @@ Item {
                 // typed query produces ranges to highlight.
                 textFormat: titleLine.hasRanges ? Text.RichText : Text.PlainText
                 elide: Text.ElideRight
+                // 2026-09-15: fixed pitch so filenames in a column line up.
+                // The match-highlight spans only set color/background, so the
+                // family applies to both the PlainText and RichText paths.
+                font.family: Theme.fontFamilyMono
                 font.pixelSize: Theme.fontSizeTitle
                 font.weight: Theme.fontWeightRegular
                 color: Theme.textPrimary      // unmatched segments (near-white on accent: 4.7:1, UI-SPEC)
@@ -304,7 +351,7 @@ Item {
         visible: model.iconKey !== "calc"
         width: Theme.removeButtonSize
         height: Theme.removeButtonSize
-        x: (parent.width - Theme.spaceSm) / row.scale - Theme.removeButtonSize
+        x: (parent.width - Theme.rowRightInset) / row.scale - Theme.removeButtonSize
            - Theme.spaceXs - width
         anchors.verticalCenter: parent.verticalCenter
         opacity: row.fav ? Theme.fullOpacity : (row.hovered ? Theme.fullOpacity : 0)
@@ -321,13 +368,49 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             onClicked: {
-                resultsModel.selectIndex(model.index)
-                if (row.fav)
-                    resultsModel.unfavoriteSelected()
-                else
-                    resultsModel.favoriteSelected()
+                const idx = model.index
+                const wasFav = row.fav
+                // 2026-09-15: defer the model mutation out of this handler.
+                // selectIndex() drives the ListView's currentIndex, which can
+                // recycle/destroy the very delegate whose MouseArea handler is
+                // on the stack — Qt then aborts with "Object ... destroyed
+                // while one of its QML signal handlers is in progress".
+                // Mutating from a queued callback guarantees the handler has
+                // fully returned first. The cost is one event-loop turn, which
+                // is imperceptible.
+                Qt.callLater(function() {
+                    resultsModel.selectIndex(idx)
+                    if (wasFav)
+                        resultsModel.unfavoriteSelected()
+                    else
+                        resultsModel.favoriteSelected()
+                })
             }
         }
+    }
+
+    // ── DUPLICATE badge (2026-10-08) ──
+    // A row that shares its display name with another row. Deliberately NOT a
+    // boxed chip: the first cut drew an amber-outlined pill, which was the only
+    // element in the shell not built from Theme tokens and read as a foreign
+    // object. This is the same treatment as the row keycap (fontSizeKeycap +
+    // semibold + accentLight, no background), sitting in the right gutter
+    // beside the star so both share one alignment rule.
+    Text {
+        id: dupBadge
+        objectName: "dupBadge"
+        visible: row.dup
+        text: "duplicate"
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSizeKeycap
+        font.weight: Theme.fontWeightSemibold
+        color: Theme.accentLight
+        // Counter-scale pin, matching favBtn/removeBtn: the selected row scales
+        // up about its LEFT edge, so dividing by the scale holds this at the
+        // unscaled x. The keycap and the star both live to the right of
+        // dupRightEdge, so nothing overlaps.
+        x: row.dupRightEdge / row.scale - width
+        anchors.verticalCenter: parent.verticalCenter
     }
 
     // ── Hover-revealed remove button (2026-08-15) ──
@@ -349,9 +432,12 @@ Item {
         // the always-selected first row — "the X is a bit off for the first
         // item". Instead of anchors.right, pin the VISUAL right edge to the
         // row's logical right edge by dividing the logical x by row.scale:
-        // rendered right = (x + width) * row.scale = parent.width - spaceSm,
+        // rendered right = (x + width) * row.scale = parent.width - inset,
         // constant across every row (selected or not).
-        x: (parent.width - Theme.spaceSm) / row.scale - width
+        // 2026-09-15: inset is rowRightInset (16px), not spaceSm (8px) — the
+        // old value coincided with the overlay scrollbar's own footprint, so
+        // the X sat underneath the thumb, jammed against the window border.
+        x: (parent.width - Theme.rowRightInset) / row.scale - width
         anchors.verticalCenter: parent.verticalCenter
         opacity: row.hovered ? Theme.fullOpacity : 0
         Behavior on opacity { NumberAnimation { duration: Theme.animFade } }
@@ -379,11 +465,19 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             onClicked: {
-                resultsModel.selectIndex(model.index)
-                if (model.isHidden)
-                    resultsModel.unhideSelected()
-                else
-                    resultsModel.hideSelected()
+                const idx = model.index
+                const wasHidden = model.isHidden
+                // 2026-09-15: same deferral as the favorite star — hide/unhide
+                // rebuild the view, and doing that inside the handler that owns
+                // a delegate is what aborts with "destroyed while a signal
+                // handler is in progress".
+                Qt.callLater(function() {
+                    resultsModel.selectIndex(idx)
+                    if (wasHidden)
+                        resultsModel.unhideSelected()
+                    else
+                        resultsModel.hideSelected()
+                })
             }
         }
     }
@@ -400,7 +494,7 @@ Item {
         width: Theme.spaceLg
         x: row.fav
            ? (favBtn.x - Theme.spaceXs - width)
-           : (parent.width - Theme.spaceSm - width)
+           : (parent.width - Theme.rowRightInset - width)
         anchors.verticalCenter: parent.verticalCenter
         text: String(model.index + 1)
         font.pixelSize: Theme.fontSizeKeycap

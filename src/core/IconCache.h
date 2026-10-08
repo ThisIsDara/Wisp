@@ -1,9 +1,10 @@
 #pragma once
 #include <QHash>
 #include <QImage>
-#include <QList>
 #include <QMutex>
 #include <QString>
+
+#include <list>
 
 // Bounded in-memory LRU icon cache (D-03): holds extracted 64px QImages keyed
 // by the FULL provider id (opaque strings from the shell — .lnk iconRefs,
@@ -42,10 +43,31 @@ public:
     int size() const;
 
 private:
-    // m_order front = LRU/oldest, back = MRU/newest. get()/insert() move the
-    // touched key to the back; insert() evicts from the front while over cap.
+    // 2026-09-15 perf: O(1) LRU.
+    //
+    // The previous design kept a QHash<key, QImage> plus a QList<key> recency
+    // list, and marked a key MRU with m_order.removeOne(key) — a LINEAR scan
+    // costing a string compare per element, over a list capped at 1500, done
+    // while holding the mutex. Icon lookups run for every visible row on every
+    // repaint (and again on every delegate recycle), so this was the hottest
+    // O(n) path in the UI: ~15 rows × up to 1500 string compares, serialized
+    // under the lock.
+    //
+    // std::list gives O(1) splice-to-end and, critically, never invalidates
+    // other iterators on insert — so the hash can hold stable node handles.
+    // Eviction stays O(1) (pop the front node, drop its hash entry).
+    //
+    // Eviction ORDER is byte-for-byte the same policy as before (front = LRU,
+    // back = MRU, touch promotes to MRU). tst_iconcache pins that behaviour
+    // with hitReorders() and oldestEvicted().
+    struct Node {
+        QString key;
+        QImage img;
+    };
+    using List = std::list<Node>;
+
     mutable QMutex m_mutex;
-    QHash<QString, QImage> m_map;
-    QList<QString> m_order;
+    List m_order;                            // front = LRU/oldest, back = MRU
+    QHash<QString, List::iterator> m_index;  // key → node handle (stable)
     int m_capacity = 500;
 };

@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
-project(wisp VERSION 0.1.8 LANGUAGES CXX)
+project(wisp VERSION 0.1.9 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Qml Gui Core Test Widgets Concurrent Network)
+find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Qml Gui Core Test Widgets Concurrent Network QuickControls2)
 
 qt_standard_project_setup()
 qt_policy(SET QTP0001 NEW)   # module resources at :/qt/qml/<Module> — the import system's canonical location (deploy-safe)
@@ -95,6 +95,12 @@ qt_add_qml_module(wisp_qml
         qml/Theme.qml
     RESOURCES
         qml/assets/shadow.png
+        # JetBrains Mono (OFL-1.1) — bundled so the query field + result
+        # titles look identical on every machine (name-only lookup would
+        # silently fall back to Segoe UI wherever it isn't installed).
+        qml/assets/fonts/JetBrainsMono-Regular.ttf
+        qml/assets/fonts/JetBrainsMono-SemiBold.ttf
+        qml/assets/fonts/JetBrainsMono-OFL.txt
 )
 
 target_link_libraries(wisp PRIVATE
@@ -102,6 +108,11 @@ target_link_libraries(wisp PRIVATE
     Qt6::Qml
     Qt6::Gui
     Qt6::Widgets
+    # 2026-09-15: linked for QQuickStyle::setStyle() (main.cpp forces the Basic
+    # style). Not a NEW runtime dependency — the QML already imports
+    # QtQuick.Controls for ScrollBar/TextField, so this module is deployed
+    # either way; linking it just makes the style switch explicit.
+    Qt6::QuickControls2
     wisp_core
     wisp_qml
     wisp_qmlplugin
@@ -110,7 +121,7 @@ target_link_libraries(wisp PRIVATE
 include(CTest)
 if(BUILD_TESTING)
     qt_add_executable(tst_shell tests/tst_shell.cpp)
-    target_link_libraries(tst_shell PRIVATE Qt6::Quick Qt6::Qml Qt6::Gui Qt6::Test wisp_core wisp_qml wisp_qmlplugin)
+    target_link_libraries(tst_shell PRIVATE Qt6::Quick Qt6::Qml Qt6::Gui Qt6::Test Qt6::QuickControls2 wisp_core wisp_qml wisp_qmlplugin)
     add_test(NAME tst_shell COMMAND tst_shell)
 
     qt_add_executable(tst_hotkey tests/tst_hotkey.cpp)

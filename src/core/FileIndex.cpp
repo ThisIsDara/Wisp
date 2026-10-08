@@ -1,5 +1,7 @@
 #include "core/FileIndex.h"
 
+#include "win/WinStartMenuEnumerator.h" // 2026-10-08: .lnk target resolution at walk time
+
 #include <QDataStream>
 #include <QDir>
 #include <QFile>
@@ -174,7 +176,15 @@ void FileIndex::walkDir(const QString &dir, int depth, const WinDirectoryWalk::W
             outcome.mtimes.insert(full, sub.lastWriteMs);
             walkDir(full, depth + 1, sub, outcome, snapshot, childrenByParent, isDirByPath, listFn);
         } else if (isIndexableFile(entry.name)) {
-            outcome.added.append(IndexEntry{full, matchKeyOf(full), false});
+            // 2026-10-08: resolve .lnk targets HERE, on the scan worker, and
+            // persist them. Duplicate detection then needs no COM at query time,
+            // and — because the walk memoises unchanged directories — the parse
+            // only happens when a directory actually changed. Broken links yield
+            // an empty target and are simply left out of duplicate analysis.
+            const bool isLnk = full.endsWith(QLatin1String(".lnk"), Qt::CaseInsensitive);
+            outcome.added.append(IndexEntry{full, matchKeyOf(full), false,
+                                           isLnk ? WinStartMenuEnumerator::resolveLnkTarget(full)
+                                                 : QString()});
         }
     }
 }
@@ -254,7 +264,7 @@ bool FileIndex::save() const
     ds << kMagic << kFormatVersion;
     ds << quint32(m_entries.size());
     for (const auto &e : m_entries)
-        ds << e.path << e.isFolder;
+        ds << e.path << e.isFolder << e.launchTarget;
     ds << quint32(m_dirMtimes.size());
     for (auto it = m_dirMtimes.constBegin(); it != m_dirMtimes.constEnd(); ++it)
         ds << it.key() << it.value();
@@ -284,7 +294,7 @@ bool FileIndex::load()
     entries.reserve(int(count));
     for (quint32 i = 0; i < count; ++i) {
         IndexEntry e;
-        ds >> e.path >> e.isFolder;
+        ds >> e.path >> e.isFolder >> e.launchTarget;
         if (ds.status() != QDataStream::Ok)
             return false;
         e.matchKey = matchKeyOf(e.path);
@@ -352,7 +362,8 @@ QVector<FileIndex::IndexEntry> FileIndex::queryCandidates(const QString &query) 
                 if (query.isEmpty()) { out.append(e); continue; }
                 int qi = 0; const int ql = folded.size();
                 for (int mi = 0; mi < e.matchKey.size() && qi < ql; ++mi)
-                    if (e.matchKey.at(mi) == folded.at(qi)) ++qi;
+                    if (e.matchKey.at(mi) == folded.at(qi))
+                        ++qi;
                 if (qi == ql) out.append(e);
             }
             return out;
@@ -369,9 +380,27 @@ QVector<FileIndex::IndexEntry> FileIndex::queryCandidates(const QString &query) 
             // index only holds .exe rows, so this IS the launcher inventory).
             out.append(e);
         } else {
-            // Case-insensitive subsequence two-pointer prefilter — a superset
-            // of FuzzyMatcher acceptance (A3): anything FuzzyMatcher would
-            // accept is already a subsequence of the folded path.
+            // 2026-09-15 (user report: searching "Discord" also listed "Wow",
+            // and "Hermes" pulled in unrelated apps).
+            //
+            // This two-pointer scan is a loose SUBSEQUENCE over the whole path,
+            // and it is deliberately kept that way: it is a PREFILTER, and it
+            // must be a superset of FuzzyMatcher's acceptance so that anything
+            // whose NAME matches is never dropped before scoring (query "a2"
+            // must still reach FuzzyMatcher for the name "App2.exe"). Making it
+            // a substring match here would fix the symptom but break that
+            // guarantee, so the prefilter stays loose.
+            //
+            // The real defect was that this prefilter's result was treated as
+            // PROOF that the path matched. It isn't — a long Windows path
+            // satisfies a subsequence by accident (the reproduction was
+            //     C:\Users\Trick\Documents\Disciplines\Soccer\Recordings\Wow.exe
+            // — no "discord" as text, but d-i-s…s-c-o…o-r-d in order), so "Wow"
+            // was admitted at the D-07 path tier and rendered as a normal
+            // result. Admission now happens in FileProvider/mergeFiles against
+            // a contiguous substring test, which a path must actually earn
+            // (searching "steam" finds "...\Steam\steam.exe"; "tax 2025" finds
+            // "...\Tax 2025\report.txt").
             int qi = 0;
             const int ql = folded.size();
             for (int mi = 0; mi < e.matchKey.size() && qi < ql; ++mi)
@@ -403,6 +432,9 @@ QVector<AppEntry> FileIndex::toEntries(const QVector<IndexEntry> &candidates, in
         e.displayName = fileEntryTitle(candidates[i].path); // derived, never stored (.exe stripped, 2026-08-15)
         e.targetPath = candidates[i].path;
         e.isFolder = candidates[i].isFolder;
+        // 2026-10-08: carry the resolved .lnk target through. Empty for plain
+        // executables (they are their own launch identity) and for broken links.
+        e.launchTarget = candidates[i].launchTarget;
         out.append(e);
     }
     return out;

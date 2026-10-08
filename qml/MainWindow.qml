@@ -16,6 +16,7 @@ Window {
     // below, auto-cleared by hintTimer; non-modal by design.
     property string hintText: ""
 
+    property bool dupPanelOpen: false
     // Phase-11 tab-switch perf (2026-09-02): while a tab switch is settling the
     // ListView collapses its cache/margin window to just the visible rows, so
     // the grow-back (Favorites→All) only materializes ~the on-screen delegates
@@ -59,7 +60,17 @@ Window {
         // nav/Enter/Escape because searchField's Keys.forwardTo pipes every
         // key through this shell block first (accepted keys never reach the
         // caret; unaccepted character keys fall through to normal text input).
-        Keys.onEscapePressed: ctxMenu.visible ? ctxMenu.closeMenu() : dismiss()   // D-08: Escape → close menu first, else close animation
+        // 2026-10-08: the duplicates panel is an overlay of the same kind, so it
+        // joins the Escape chain — otherwise Escape closed the whole launcher
+        // while the panel was open, leaving it to be dismissed by a stray click.
+        Keys.onEscapePressed: {
+            if (ctxMenu.visible)
+                ctxMenu.closeMenu()
+            else if (dupPanel.visible)
+                dupPanel.close()
+            else
+                dismiss()   // D-08: Escape → close menu first, else close animation
+        }
         // INSTANT keyboard follow (D-06): each nav key moves the selection AND
         // jumps the viewport via followSelection() — the launcher never
         // animates under the keyboard. Hover NEVER scrolls (D-02), so the
@@ -427,6 +438,8 @@ Window {
                 height: Theme.rowHeight
                 verticalAlignment: TextInput.AlignVCenter
                 placeholderText: "Type to search apps and files…"  // RESEARCH §7 verbatim
+                // 2026-09-15: the query is a command bar — JetBrains Mono.
+                font.family: Theme.fontFamilyMono
                 font.pixelSize: Theme.fontSizeQuery
                 color: Theme.textPrimary
                 placeholderTextColor: Theme.placeholderColor  // D-10 dedicated token
@@ -456,6 +469,7 @@ Window {
                 }
                 onTextChanged: {
                     ctxMenu.closeMenu()
+                    dupPanel.close()
                     if (text.length === 0) {
                         queryDebounce.stop()
                         resultsModel.setQuery(text)
@@ -531,6 +545,7 @@ Window {
                         hoverEnabled: true
                         onClicked: {
                             ctxMenu.closeMenu()
+                            dupPanel.close()
                             resultsModel.setFavoritesOnly(false)
                         }
                     }
@@ -561,6 +576,7 @@ Window {
                         hoverEnabled: true
                         onClicked: {
                             ctxMenu.closeMenu()
+                            dupPanel.close()
                             resultsModel.setFavoritesOnly(true)
                         }
                     }
@@ -588,6 +604,7 @@ Window {
             }
             ListView {
                 id: resultsView
+                objectName: "resultsView"
                 // Tight inner padding so rows sit INSIDE the orange border;
                 // the frame's own spaceSm margin is the outer "layout".
                 anchors.fill: listFrame
@@ -817,6 +834,59 @@ Window {
                     }
                 }
 
+                // ── Duplicate-app indicator (2026-10-08) ──
+                // The alerting half of the feature: how many duplicate groups the
+                // current list holds, click to open the panel that lists and
+                // removes them.
+                //
+                // Structurally IDENTICAL to "Show hidden (N)" next to it — plain
+                // MouseArea + Text at the same type ramp, no box, no fill. The
+                // first cut drew an amber-outlined pill at a smaller font size,
+                // which read as a bolted-on foreign element next to a quiet text
+                // button. The only difference is the resting colour: accentLight
+                // so it stands out as worth acting on, against textSecondary for
+                // "Show hidden".
+                // All tab only: the Favorites tab is a hand-picked subset, so a
+                // "duplicate" there is a curation choice, not a stray copy.
+                MouseArea {
+                    id: dupChipArea
+                    objectName: "dupChip"
+                    visible: resultsModel.duplicateGroupCount > 0 && !resultsModel.favoritesOnly
+                    anchors.right: showHiddenArea.left
+                    anchors.rightMargin: Theme.spaceXl
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: dupChipLabel.width
+                    height: Theme.rowHeight
+                    hoverEnabled: true
+                    onClicked: {
+                        if (root.dupPanelOpen)
+                            dupPanel.close()
+                        else
+                            root.dupPanelOpen = true
+                    }
+                    Text {
+                        id: dupChipLabel
+                        anchors.verticalCenter: parent.verticalCenter
+                        // Constant text — the label does NOT change when the
+                        // panel opens. The first cut swapped in a "Hide "
+                        // prefix, which made the label ~40px wider and pushed it
+                        // left across "Add executable…" in the footer (the
+                        // footer items are absolutely anchored, so nothing
+                        // reflows them). Open state reads through colour alone.
+                        text: resultsModel.duplicateGroupCount
+                              + (resultsModel.duplicateGroupCount === 1
+                                 ? " duplicate" : " duplicates")
+                        font.pixelSize: Theme.fontSizeTitle
+                        font.weight: Theme.fontWeightRegular
+                        // accentLight at rest, matching the other accent
+                        // affordances in this footer ("Add folder to scan…"),
+                        // so it reads as worth acting on without inventing a
+                        // colour outside the Theme vocabulary.
+                        color: dupChipArea.containsMouse || root.dupPanelOpen
+                               ? Theme.textPrimary : Theme.accentLight
+                    }
+                }
+
                 // Right: "Show hidden (N)" (05.1) — visible whenever hidden
                 // entries exist (rule- AND user-hidden — the discoverability
                 // surface for the whole feature). Toggling reveals dimmed rows
@@ -876,6 +946,209 @@ Window {
                 }
             }
 
+            // ── Duplicates panel (2026-10-08) ──
+            // Opened from the footer indicator. An overlay sibling of ctxMenu,
+            // never a popup window — same reason the context menu is in-window
+            // (2026-08-11: a delegate-scoped Popup landed wrong on the scaled
+            // delegates). Surface, radius, border and the background-dismiss
+            // MouseArea are copied from ctxMenu so the two overlays are
+            // indistinguishable in style.
+            //
+            // Lists every duplicate group with each copy's full path and a
+            // per-copy Remove, which REMOVES that copy from the app: it does not
+            // reappear under "Show hidden", and it stays gone across a rescan of
+            // the directory. Nothing is deleted from disk.
+            Item {
+                id: dupPanel
+                objectName: "dupPanel"
+                visible: root.dupPanelOpen
+                z: Theme.menuZ
+                // Responsive: spans the results column rather than a fixed width,
+                // so it cannot overflow a narrow window and needs no magic number.
+                x: resultsView.x + Theme.spaceSm
+                width: resultsView.width - Theme.spaceSm * 2
+                // Grows with the content, capped to the window. Derived from
+                // contentHeight (not from the ListView's own height) to keep this
+                // non-circular: the list is anchored to the panel, so sizing the
+                // panel from the list's height would loop.
+                height: Math.min(root.height - Theme.spaceLg * 2,
+                                 dupPanelHeader.height + Theme.spaceMd * 3
+                                 + dupPanelList.contentHeight)
+                y: Math.max(Theme.spaceSm,
+                            Math.min(footerRow.y - height - Theme.spaceSm,
+                                     root.height - height - Theme.spaceLg))
+                function close() { root.dupPanelOpen = false }
+
+                // Background WITH its own full-size MouseArea — the ctxMenu H-02
+                // lesson: without it a press on the border strip falls through to
+                // the row underneath and LAUNCHES the app. Here a press is simply
+                // a miss: dismiss.
+                Rectangle {
+                    anchors.fill: parent
+                    color: Theme.surfaceSecondary
+                    radius: Theme.menuRadius
+                    border.width: 1
+                    border.color: Theme.border
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: dupPanel.close()
+                    }
+                }
+                Item {
+                    id: dupPanelHeader
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.topMargin: Theme.spaceMd
+                    anchors.leftMargin: Theme.spaceMd
+                    anchors.rightMargin: Theme.spaceMd
+                    height: dupTitle.implicitHeight + Theme.spaceXs
+                            + dupSubtitle.implicitHeight
+                    Text {
+                        id: dupTitle
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        text: "Duplicate apps"
+                        color: Theme.textPrimary
+                        font.pixelSize: Theme.fontSizeTitle
+                        font.weight: Theme.fontWeightSemibold
+                    }
+                    Text {
+                        id: dupSubtitle
+                        anchors.top: dupTitle.bottom
+                        anchors.topMargin: Theme.spaceXs
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        // States plainly what Remove does, so it is never mistaken
+                        // for a deletion from disk — nor for a Hide, which would
+                        // leave the row sitting in "Show hidden (N)".
+                        text: "The same app, listed more than once. Removing one clears it from wisp - the file is left alone."
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeMenu
+                        font.weight: Theme.fontWeightRegular
+                        elide: Text.ElideRight
+                    }
+                }
+                ListView {
+                    id: dupPanelList
+                    objectName: "dupPanelList"
+                    anchors.top: dupPanelHeader.bottom
+                    anchors.topMargin: Theme.spaceMd
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.leftMargin: Theme.spaceMd
+                    anchors.rightMargin: Theme.spaceMd
+                    anchors.bottomMargin: Theme.spaceMd
+                    clip: true
+                    spacing: Theme.spaceMd
+                    model: resultsModel.duplicateGroups
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    delegate: Column {
+                        width: dupPanelList.width
+                        spacing: 0
+                        // Group heading: the name, the copy count, and a
+                        // one-click action that clears the whole redundancy in a
+                        // single press. Per-copy Remove alone was the thing the
+                        // user fought: removing one copy of three left two, the
+                        // group stayed a duplicate, and it read as though
+                        // Remove had done nothing. This keeps the FIRST copy and
+                        // hides the rest, so the group resolves immediately.
+                        Item {
+                            width: dupPanelList.width
+                            height: Theme.menuItemHeight
+                            Text {
+                                anchors.left: parent.left
+                                anchors.right: dupRemoveAll.left
+                                anchors.rightMargin: Theme.spaceSm
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: modelData.name + "  (" + modelData.count + " copies)"
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeMenu
+                                font.weight: Theme.fontWeightRegular
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                id: dupRemoveAll
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Remove " + (modelData.count - 1)
+                                      + (modelData.count === 2 ? " duplicate" : " duplicates")
+                                color: dupRemoveAllHover.containsMouse
+                                       ? Theme.textPrimary : Theme.accentLight
+                                font.pixelSize: Theme.fontSizeMenu
+                                font.weight: Theme.fontWeightRegular
+                                visible: modelData.count > 1
+                                MouseArea {
+                                    id: dupRemoveAllHover
+                                    anchors.fill: parent
+                                    anchors.topMargin: -Theme.spaceXs
+                                    anchors.bottomMargin: -Theme.spaceXs
+                                    anchors.leftMargin: -Theme.spaceSm
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        // Keep paths[0]; hide every other copy.
+                                        // Remove is a separate axis from Hide: the row leaves the app for good
+                                        // (no "Show hidden" entry), and the group leaves
+                                        // this panel on the next signal.
+                                        const keep = modelData.paths[0]
+                                        for (let i = 1; i < modelData.paths.length; ++i) {
+                                            if (modelData.paths[i] !== keep)
+                                                resultsModel.removePath(modelData.paths[i])
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Repeater {
+                            model: modelData.paths
+                            delegate: Item {
+                                width: dupPanelList.width
+                                height: Theme.menuItemHeight
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.right: dupRemove.left
+                                    anchors.rightMargin: Theme.spaceSm
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    // Mono: these are paths — fixed-width glyphs
+                                    // make the differing segment obvious at a glance.
+                                    text: modelData
+                                    color: Theme.textPrimary
+                                    font.family: Theme.fontFamilyMono
+                                    font.pixelSize: Theme.fontSizeSubtitle
+                                    font.weight: Theme.fontWeightRegular
+                                    elide: Text.ElideMiddle
+                                }
+                                // Quiet text button, mirroring the row's
+                                // favourite/remove affordance. NOT a filled
+                                // accent pill: that read as the panel's primary
+                                // action and outranked everything else in it.
+                                Text {
+                                    id: dupRemove
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "Remove"
+                                    color: dupRemoveHover.containsMouse
+                                           ? Theme.textPrimary : Theme.accentLight
+                                    font.pixelSize: Theme.fontSizeSubtitle
+                                    font.weight: Theme.fontWeightRegular
+                                    MouseArea {
+                                        id: dupRemoveHover
+                                        anchors.fill: parent
+                                        // Pad the hit target out to the row's own
+                                        // height; a 12px text label is a poor target.
+                                        anchors.topMargin: -Theme.spaceXs
+                                        anchors.bottomMargin: -Theme.spaceXs
+                                        hoverEnabled: true
+                                        onClicked: resultsModel.removePath(modelData)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             // ── In-window context menu (05.1) — right-click curation
             // (CUR-02/03). Overlay sibling of the list (never a popup window:
             // delegate-scoped Popup landed wrong on the scaled delegates —
@@ -893,8 +1166,14 @@ Window {
                 id: ctxDismiss
                 anchors.fill: parent
                 z: Theme.catcherZ
-                visible: ctxMenu.visible
-                onClicked: ctxMenu.closeMenu()
+                visible: ctxMenu.visible || dupPanel.visible
+                // 2026-10-08: closes whichever overlay is open — a press outside
+                // dismisses the duplicates panel the same way it dismisses the
+                // context menu, rather than leaving it stuck.
+                onClicked: {
+                    ctxMenu.closeMenu()
+                    dupPanel.close()
+                }
             }
             Item {
                 id: ctxMenu
@@ -1390,6 +1669,7 @@ Text {
     onVisibleChanged: {
         if (visible) {
             ctxMenu.closeMenu()    // 05.1: never resurrect the menu on reopen (M-03)
+            dupPanel.close()    // 2026-10-08: same M-03 parity for the duplicates panel
             centerOnScreen()      // see centerOnScreen() — re-apply every show
             resultsView.keyboardActive = false   // fresh input mode each open
             // 2026-08-11: fresh-slate selection every open — the selection

@@ -11,6 +11,13 @@ struct ScoredEntry {
     AppEntry entry;
     FuzzyMatcher::Result match;
     int totalScore = 0;
+    // 2026-09-15 perf: derived keys a provider computes ONCE while it still
+    // has the entry in hand, so the provider's sort and favorites filter stop
+    // rebuilding them per comparison / per row. Both are pure caches of
+    // `entry` — providers that don't set them leave them empty, which only
+    // costs the (still-correct) fallback at the read site.
+    QString foldName;  // entry.displayName.toCaseFolded() — alphabetical tie-break
+    QString foldId;    // targetPath (or aumid when empty) — favorites membership
 };
 
 class SearchProvider

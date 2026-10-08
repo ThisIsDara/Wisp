@@ -8,6 +8,12 @@
 #include <thread>
 
 #include "core/FileIndex.h"
+#include "core/FileProvider.h"
+#include "core/AppProvider.h"
+#include "core/CalculatorProvider.h"
+#include "core/CommandProvider.h"
+#include <QThreadPool>
+#include "core/ResultsModel.h"
 #include "win/WinDirectoryWalk.h"
 
 // FileIndex delta contract (07-01 task 3): pure walkAndDelta logic driven by
@@ -37,6 +43,9 @@ private slots:
     void wipeThenRescanRepopulates();
     void toEntriesStripsExe_20260815();
     void concurrentReadsDuringWalk();
+    void nonMatchingNameNotAdmitted_20260915();
+    void duplicateSurvivesProviderPath_20261008();
+    void duplicateSurvivesTabSwitch_20261008();
 
 private:
     WinDirectoryWalk::WinDirEntry entry(const QString &name, bool dir, qint64 mtime,
@@ -409,6 +418,167 @@ void TstIndex::toEntriesStripsExe_20260815()
     QCOMPARE(out.at(0).source, AppEntry::Source::File);
     QCOMPARE(out.at(0).targetPath, QStringLiteral("C:\\Games\\WoW.exe")); // path intact
     QCOMPARE(out.at(4).isFolder, true);
+}
+
+void TstIndex::nonMatchingNameNotAdmitted_20260915()
+{
+    // 2026-09-15 (user report: searching "Discord" also listed "Wow"). A
+    // candidate whose PATH does not contain the query as a CONTIGUOUS substring
+    // must not reach the path-match tier.
+    //
+    // The loose subsequence prefilter in queryCandidates() deliberately STAYS —
+    // it must remain a superset so genuine name matches are not dropped early.
+    // The gate that admits or rejects is FileProvider::pathMatchesQuery(), so
+    // that is what this drives, end to end through the real index + provider.
+    //
+    // The root itself carries the path text, so no subtree listing is needed
+    // (the walk skips directories the listing map does not describe).
+    const QString root = QStringLiteral("C:\\Tax 2025");
+    QVector<WinDirectoryWalk::WinDirEntry> entries;
+    entries.append(entry(QStringLiteral("report.exe"), false, 11));   // path hit
+    entries.append(entry(QStringLiteral("Summary.exe"), false, 12));  // name hit
+    // "Wow.exe" contains no "discord" as text, but d-i-s / c-o-r-d appear IN
+    // ORDER across its path, which a subsequence prefilter cannot distinguish.
+    entries.append(entry(QStringLiteral("Wow.exe"), false, 13));      // must be rejected
+
+    auto map = QHash<QString, WinDirectoryWalk::WinDirListing>{
+        {root, listing(entries, 5)},
+    };
+    auto listFn = [&map](const QString &p) { return map.value(p); };
+
+    FileIndex index(m_indexPath);
+    index.apply(index.walkAndDelta(QStringList{root}, listFn));
+
+    FileProvider provider;
+    provider.setIndex(&index);
+
+    const auto pathsFor = [&provider](const QString &q) {
+        QSet<QString> out;
+        for (const ScoredEntry &se : provider.query(q, 50, false))
+            out.insert(se.entry.targetPath);
+        return out;
+    };
+
+    // Name match: the query IS the file's title.
+    QVERIFY(pathsFor(QStringLiteral("Summary")).contains(root + QStringLiteral("\\Summary.exe")));
+
+    // Path match: "Tax 2025" appears contiguously in the row's own path.
+    QVERIFY(pathsFor(QStringLiteral("Tax 2025")).contains(root + QStringLiteral("\\report.exe")));
+
+    // THE REGRESSION: a loose subsequence across the path must not admit Wow.exe.
+    const auto dis = pathsFor(QStringLiteral("discord"));
+    QVERIFY2(!dis.contains(root + QStringLiteral("\\Wow.exe")),
+             "a path that merely contains the query's letters in order must not be admitted");
+}
+
+void TstIndex::duplicateSurvivesProviderPath_20261008()
+{
+    // 2026-10-08 regression, and the reason this test exists.
+    //
+    // Rows reach the model through TWO different builders:
+    //   FileIndex::toEntries  - the default list (empty query)
+    //   FileProvider::query   - ANY typed query, via the provider fan-out
+    // The first copied the resolved .lnk target; the second silently did not.
+    // So with a query typed, every row had an empty launchTarget, duplicate
+    // detection fell back to each row's own path as its identity, two identical
+    // "Discord" shortcuts could never group, and the feature reported ZERO
+    // duplicates — while the list plainly showed two identical rows.
+    //
+    // Tests that injected pre-built AppEntry fixtures could not catch this: the
+    // field was already set on them. This drives the real builder instead.
+    FileIndex index(m_indexPath);
+    FileIndex::WalkOutcome outcome;
+    const QString root = QStringLiteral("C:\\root");
+    const QString exe = QStringLiteral("C:\\root\\app\\Discord.exe");
+    for (const QString &p : { QStringLiteral("C:\\root\\Discord Inc\\Discord.lnk"),
+                              QStringLiteral("C:\\root\\Discord.lnk"),
+                              QStringLiteral("C:\\root\\Wow.exe") }) {
+        // The two shortcuts resolve to one program; Wow.exe is its own thing.
+        const bool isLnk = p.endsWith(QLatin1String(".lnk"), Qt::CaseInsensitive);
+        outcome.added.append(
+            FileIndex::IndexEntry{p, p.toCaseFolded(), false, isLnk ? exe : p});
+    }
+    index.apply(outcome);
+
+    FileProvider provider;
+    provider.setIndex(&index);
+    provider.setAddedSource([] { return QVector<AppEntry>{}; });
+
+    const auto entries = provider.query(QString(), 50, false);
+    QCOMPARE(entries.size(), 3);
+    int withTarget = 0;
+    for (const ScoredEntry &se : entries)
+        if (!se.entry.launchTarget.isEmpty())
+            ++withTarget;
+    QCOMPARE(withTarget, 3);   // Wow.exe is its own identity, but still carries it
+
+    // ...and end to end: the model must now see a duplicate group.
+    ResultsModel m;
+    QVector<AppEntry> rows;
+    rows.reserve(entries.size());
+    for (const ScoredEntry &se : entries)
+        rows.append(se.entry);
+    m.setEntries(rows);
+    QCOMPARE(m.rowCount({}), 3);
+    QCOMPARE(m.duplicateGroupCount(), 1);
+    QCOMPARE(m.duplicateGroups().first().toMap().value(QStringLiteral("name")).toString(),
+             QStringLiteral("Discord"));
+}
+void TstIndex::duplicateSurvivesTabSwitch_20261008()
+{
+    // 2026-10-08 (user: "I still don't see the duplicate button"): a TAB SWITCH
+    // must not leave the duplicate cache stale.
+    //
+    // The cache was refreshed only by an explicit call appended to each order
+    // mutator — but setFavoritesOnly takes an early `return` on the provider
+    // path, so that call was dead code there. In the running app the cache kept
+    // whatever it held from an early moment (measured: a recompute over 8
+    // favourite rows) and the footer chip reported 0 duplicates while the All
+    // tab showed 94 rows. Recomputation is now driven by the model's own
+    // modelReset/rowsInserted/rowsRemoved/layoutChanged signals.
+    FileIndex index(m_indexPath);
+    FileIndex::WalkOutcome outcome;
+    const QString root = QStringLiteral("C:\\root");
+    const QString exe = QStringLiteral("C:\\root\\app\\Ollama.exe");
+    for (const QString &p : { QStringLiteral("C:\\root\\Ollama\\Ollama.lnk"),
+                              QStringLiteral("C:\\root\\Ollama.lnk") }) {
+        outcome.added.append(FileIndex::IndexEntry{p, p.toCaseFolded(), false, exe});
+    }
+    index.apply(outcome);
+
+    FileProvider fileProvider;
+    fileProvider.setIndex(&index);
+    fileProvider.setAddedSource([] { return QVector<AppEntry>{}; });
+    AppProvider appProvider;
+    CalculatorProvider calcProvider;
+    CommandProvider cmdProvider;
+
+    ResultsModel m;
+    m.setProviders({ &appProvider, &fileProvider, &calcProvider, &cmdProvider });
+    m.setPool(QThreadPool::globalInstance());
+
+    const auto drain = [] {
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 600)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    };
+
+    m.setQuery(QStringLiteral("o"));
+    drain();
+    QVERIFY(m.rowCount({}) > 0);
+    QCOMPARE(m.duplicateGroupCount(), 1);
+
+    // The tab switch: favourites ON (empty here, so no duplicates) then back to
+    // All. Without the signal-driven recompute the count would stay 0 and the
+    // footer chip would never reappear.
+    m.setFavoritesOnly(true);
+    drain();
+    m.setFavoritesOnly(false);
+    drain();
+    QVERIFY2(m.duplicateGroupCount() == 1,
+             "the duplicate cache went stale across a tab switch — the footer "
+             "chip depends on this signal-driven recompute");
 }
 
 void TstIndex::concurrentReadsDuringWalk()

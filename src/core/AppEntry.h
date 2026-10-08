@@ -33,8 +33,20 @@ struct AppEntry {
     QString displayName;    // What the user sees and searches (D-01..D-07 use only this)
     QString targetPath;     // Resolved .lnk target (classic); full path (File); empty for UWP
     QString arguments;      // .lnk GetArguments (elevation contract, RESEARCH §1) — empty for UWP/File
-    QString aumid;          // PackageFamilyName + "!" + AppId (UWP launch key) — empty for Lnk/File
-    QString iconRef;        // GetIconLocation output / UWP logo ref — Phase 5 consumes, unused here
+    QString aumid;          // PackageFamilyName + "!" + AppId (UWP launch key) - empty for Lnk/File
+    QString iconRef;        // GetIconLocation output / UWP logo ref - Phase 5 consumes, unused here
+    // 2026-10-08: what this entry LAUNCHES, for a .lnk resolved at index-walk
+    // time (WinStartMenuEnumerator::resolveLnkTarget, persisted in the index).
+    // Empty for plain executables and for unresolved/broken shortcuts.
+    //
+    // Deliberately NOT targetPath: that field means "the path of this row" for
+    // File-source rows, and changing its meaning would ripple into CUR-04
+    // hideability, SubtitleRole and IconKeyRole. This field exists only so
+    // duplicate detection can ask "do these two entries start the same program?"
+    // — a question the display name provably cannot answer (measured on the real
+    // index: the name "Discord" matched two shortcuts, the installed binary and
+    // a versioned build folder's copy of it).
+    QString launchTarget;
     bool isFolder = false;  // File rows only (D-04): folder rows render a glyph and open in Explorer
     bool hidden = false;  // 05.1: set by markCurated (default rules OR user hide);
                           // never set for Source::File rows (escape hatch, CUR-04)

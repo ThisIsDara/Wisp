@@ -29,4 +29,22 @@ QVector<AppEntry> scanStartMenu();
 // here after resolving the known folders.
 QVector<AppEntry> scanRoots(const QStringList &rootDirs);
 
+// Resolves ONE .lnk to its target path. Returns an empty string when the link is
+// broken, unreadable, or has no target — never throws and never aborts a scan.
+//
+// This is the discriminator duplicate detection needs: two Start Menu entries are
+// duplicates of the same app when they launch the SAME program, which the file's
+// name cannot tell you. Measured on the real index (2026-10-08), grouping by
+// display name flagged an app's own versioned build folder
+// ("Discord\app-1.0.9261\Discord.exe" against "Discord\Discord.exe") and an
+// autostart shortcut as duplicates of the app — both nonsense. Resolving the
+// target gives one honest answer per program.
+//
+// Called during the file-index walk, which runs on the scan worker and memoises
+// unchanged directories, so the COM cost is paid only when a directory actually
+// changes. Must be called on a COM-initialized thread; a one-time
+// CoInitializeEx fallback is attempted internally when the thread has no
+// apartment yet (same contract as scanRoots).
+QString resolveLnkTarget(const QString &lnkPath);
+
 } // namespace WinStartMenuEnumerator

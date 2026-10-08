@@ -1,8 +1,17 @@
 #include <QtTest>
 
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QHash>
+#include <QSet>
+#include <QThreadPool>
 
 #include "core/AppEntry.h"
+#include "core/AppProvider.h"
+#include "core/CalculatorProvider.h"
+#include "core/CommandProvider.h"
+#include "core/FileProvider.h"
 #include "core/FuzzyMatcher.h"
 #include "core/ResultsModel.h"
 
@@ -31,6 +40,20 @@ AppEntry uwpEntry(const QString &name, const QString &iconRef = {})
     e.displayName = name;
     e.aumid = QStringLiteral("SomeFamily!SomeAppId");
     e.iconRef = iconRef; // 05-04: 'uwp:PFN|appId' when the enumerator emitted one
+    return e;
+}
+
+// 2026-10-08: an index row as PRODUCTION builds it. launchTarget is what
+// WinStartMenuEnumerator::resolveLnkTarget returned during the index walk — set
+// for .lnk rows, empty for a plain executable (which is its own identity).
+AppEntry idxEntry(const QString &name, const QString &path,
+                  const QString &launchTarget = {})
+{
+    AppEntry e;
+    e.source = AppEntry::Source::File;
+    e.displayName = name;
+    e.targetPath = path;
+    e.launchTarget = launchTarget;
     return e;
 }
 
@@ -112,7 +135,663 @@ private slots:
     void unhideNoOpOnVisibleRow_L01();   // 05.1 review: no spurious shown override
     void isHideableRole_CUR04();         // 2026-08-15: remove-button visibility parity
     void canRevealRole();                 // 0.1.8: "Open file location" menu-item visibility
+    void favoriteKeepsQueryResults_20260915(); // provider-mode mutations keep the query view
+    void tabSwitchRequeriesFavorites_20260915(); // tab switch re-runs the query in the new scope
+    void duplicateDetection_20261008();       // duplicate grouping + badge semantics
+    void duplicateRemoveProductionRowSpace_20261008(); // Remove works on the real row space
+    void removalSurvivesRequery_20261008();       // removal persists across re-query + rescan
+    void hideUnhideWorkOnProviderRows_20261008();
+    void removalIsNotHiding_20261008();         // removed != hidden (no Show-hidden entry)
 };
+
+// 2026-09-15 (user report: in the All tab, typing a query and favoriting an
+// app made the ENTIRE result list go empty).
+//
+// Production resolves rows through the Phase-10 provider fan-out, so this test
+// wires providers the way main.cpp does. favoriteSelected() used to rebuild
+// the view with the legacy buildAppOrder()+mergeFiles() pair, which resolves
+// rows against m_entries — the WRONG row space once the visible rows come from
+// the providers. The scored rows the user was looking at therefore vanished on
+// every favorite/hide/unfavorite.
+void TstModel::favoriteKeepsQueryResults_20260915()
+{
+    AppProvider appProvider;
+    FileProvider fileProvider;
+    CalculatorProvider calcProvider;
+    CommandProvider cmdProvider;
+
+    ResultsModel m;
+    m.setProviders({ &appProvider, &fileProvider, &calcProvider, &cmdProvider });
+    // main.cpp sets the global pool. It matters: with NO pool, setQuery takes
+    // the legacy synchronous branch (`if (!m_pool)`) and never consults the
+    // providers at all — so without this the test would exercise the wrong path
+    // and see zero rows for reasons that have nothing to do with the bug.
+    m.setPool(QThreadPool::globalInstance());
+
+    // The provider fan-out is ASYNC (QtConcurrent + QFutureWatcher) whenever a
+    // pool is available, and its completion lambda dereferences both the model
+    // and the providers. They are function-local here, so every in-flight
+    // dispatch must land before this function returns, or the watcher fires
+    // against destroyed objects (observed: a QString assert at teardown,
+    // reported as UnknownTestFunc).
+    //
+    // We cannot wait on modelReset for that: applyProviderResult's no-op guard
+    // deliberately emits NOTHING when the rows are unchanged — which is exactly
+    // the behaviour under test (favoriting must leave the list alone). So drain
+    // the event loop for a bounded time instead; the watcher delivers finished()
+    // through it.
+    const auto drain = [] {
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 250)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    };
+    // The FIRST query always changes the row set, so wait for rows to appear.
+    const auto settleFirst = [&] {
+        QElapsedTimer t;
+        t.start();
+        while (m.rowCount({}) == 0 && t.elapsed() < 5000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    };
+
+    // PRODUCTION SHAPE (main.cpp, Phase-7 pivot 07-06): the model is NEVER given
+    // setEntries — m_entries stays empty and EVERY visible row comes from the
+    // provider fan-out. That is precisely why the old legacy rebuild emptied the
+    // list: buildAppOrder() re-derived the order from the empty m_entries while
+    // the scored rows lived in the providers' results. Feeding the model a
+    // catalog here (as an earlier draft of this test did) would MASK the bug,
+    // so don't.
+    QVector<AppEntry> catalog;
+    for (const QString &n : { QStringLiteral("Alpha"), QStringLiteral("Beta"),
+                              QStringLiteral("Gamma"), QStringLiteral("Delta") })
+        catalog.append(lnkEntry(n, QStringLiteral("C:/apps/%1.exe").arg(n)));
+
+    QVector<QString> lowers;
+    QVector<QVector<char>> bounds;
+    for (const AppEntry &e : catalog) {
+        QString lower;
+        QVector<char> b;
+        FuzzyMatcher::buildCaches(e.displayName, &lower, &b);
+        lowers.append(lower);
+        bounds.append(b);
+    }
+    appProvider.setEntries(catalog, lowers, bounds);
+    appProvider.setMeta({}, /*showHidden*/ false, /*favOnly*/ false, {});
+
+    m.setQuery(QStringLiteral("a"));
+    settleFirst();
+    const int before = m.rowCount({});
+    QVERIFY2(before > 0, "the typed query must return rows before favoriting");
+
+    m.selectIndex(0);
+    // The star is bound to model.isFavorite. In provider mode the rows do NOT
+    // change when you favorite, so applyProviderResult's no-op guard emits
+    // nothing — the model must emit the role change itself or the star silently
+    // never repaints (the "star stopped working" half of the report).
+    QSignalSpy favChanged(&m, &ResultsModel::dataChanged);
+    m.favoriteSelected();
+    drain();
+
+    QVERIFY2(favChanged.count() > 0,
+             "favoriting must emit dataChanged so the star repaints");
+    bool sawFavoriteRole = false;
+    for (const QList<QVariant> &c : favChanged) {
+        const auto roles = c.at(2).toList();
+        for (const QVariant &r : roles)
+            if (r.toInt() == ResultsModel::IsFavoriteRole)
+                sawFavoriteRole = true;
+    }
+    QVERIFY2(sawFavoriteRole, "the emitted change must carry the IsFavoriteRole");
+    QCOMPARE(m.data(m.index(0), ResultsModel::IsFavoriteRole).toBool(), true);
+
+    QCOMPARE(m.query(), QStringLiteral("a"));
+    QVERIFY2(m.rowCount({}) == before,
+             qPrintable(QStringLiteral("favoriting must not change the result count (was %1, now %2)")
+                            .arg(before).arg(m.rowCount({}))));
+    QCOMPARE(m.favoriteCount(), 1);
+
+    m.selectIndex(0);
+    m.unfavoriteSelected();
+    drain();
+    QCOMPARE(m.query(), QStringLiteral("a"));
+    QVERIFY2(m.rowCount({}) == before,
+             "unfavoriting must not change the result count either");
+    QCOMPARE(m.favoriteCount(), 0);
+
+    // hideSelected had the same defect and shares the fix — hiding from a typed
+    // query must not empty the results either.
+    m.selectIndex(0);
+    m.hideSelected();
+    drain();
+    QCOMPARE(m.query(), QStringLiteral("a"));
+    QVERIFY2(m.rowCount({}) == before,
+             qPrintable(QStringLiteral("hiding must not change the result count (was %1, now %2)")
+                            .arg(before).arg(m.rowCount({}))));
+}
+
+void TstModel::tabSwitchRequeriesFavorites_20260915()
+{
+    // 2026-09-15 (user report: searching in the All list, then switching to
+    // Favorites, showed "No results found" even for a favorited match).
+    //
+    // setFavoritesOnly() used to build its target view with the legacy
+    // builders, which resolve against m_entries — permanently empty in
+    // production — so the morph target was always empty and the tab went
+    // blank, and the query was never re-evaluated in the new scope. With
+    // providers wired it must re-run the fan-out instead.
+    AppProvider appProvider;
+    FileProvider fileProvider;
+    CalculatorProvider calcProvider;
+    CommandProvider cmdProvider;
+
+    ResultsModel m;
+    m.setProviders({ &appProvider, &fileProvider, &calcProvider, &cmdProvider });
+    m.setPool(QThreadPool::globalInstance());
+
+    QVector<AppEntry> catalog;
+    for (const QString &n : { QStringLiteral("Alpha"), QStringLiteral("Alpine"),
+                              QStringLiteral("Beta"), QStringLiteral("Gamma") })
+        catalog.append(lnkEntry(n, QStringLiteral("C:/apps/%1.exe").arg(n)));
+
+    QVector<QString> lowers;
+    QVector<QVector<char>> bounds;
+    for (const AppEntry &e : catalog) {
+        QString lower;
+        QVector<char> b;
+        FuzzyMatcher::buildCaches(e.displayName, &lower, &b);
+        lowers.append(lower);
+        bounds.append(b);
+    }
+    appProvider.setEntries(catalog, lowers, bounds);
+    appProvider.setMeta({}, false, false, {});
+
+    // Favorite exactly one of the apps the query will match ("al" -> Alpha,
+    // Alpine), which is the scenario that must still show a result.
+    QSet<QString> favs;
+    favs.insert(QStringLiteral("C:/apps/Alpha.exe"));
+    m.setFavoriteIds(favs);
+
+    const auto settleFirst = [&] {
+        QElapsedTimer t;
+        t.start();
+        while (m.rowCount({}) == 0 && t.elapsed() < 5000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    };
+    const auto drain = [] {
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 250)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    };
+
+    m.setQuery(QStringLiteral("al"));   // matches Alpha AND Alpine
+    settleFirst();
+    QVERIFY2(m.rowCount({}) >= 2, "the All tab must show both 'al' matches");
+    QCOMPARE(m.query(), QStringLiteral("al"));
+
+    // Switch to Favorites — the query must be RE-RUN in the new scope, not
+    // rebuilt from nothing.
+    m.setFavoritesOnly(true);
+    drain();
+
+    QCOMPARE(m.query(), QStringLiteral("al"));   // query text preserved
+    QCOMPARE(m.rowCount({}), 1);                  // pruned to the one favorite
+    QCOMPARE(displayNameAt(m, 0), QStringLiteral("Alpha"));
+
+    // And back: the full set returns.
+    m.setFavoritesOnly(false);
+    drain();
+    QVERIFY2(m.rowCount({}) >= 2, "switching back to All must restore both matches");
+}
+
+// 2026-10-08: duplicate detection. Two rows are duplicates when they share a
+// display name — the real-world case being an app linked twice into Start Menu
+// ("Programs\Discord Inc\Discord.lnk" plus a loose "Programs\Discord.lnk").
+// The rule is name-only by measurement, not by preference: requiring a matching
+// containing-folder name too found ZERO groups on the real index, because a
+// duplicate install is by definition in a *different* folder. See
+// ResultsModel::duplicateKeyOf().
+void TstModel::duplicateDetection_20261008()
+{
+    // 2026-10-08: two entries are duplicates when they show the SAME TITLE.
+    // Every fixture below is taken from the developer's real index, where the
+    // rule was measured against three candidates (see duplicateKeyOf()).
+    ResultsModel m;
+    const QString discordExe = QStringLiteral("C:/Users/T/AppData/Local/Discord/Discord.exe");
+
+    m.setEntries({
+        // The user's reported case: four rows all titled "Discord" - two Start
+        // Menu shortcuts, the installed binary, and the app's versioned build.
+        // All four are the same app listed four times, so ALL FOUR must flag.
+        // The stricter target+title rule caught only three (the versioned copy
+        // has no resolved target and fell into its own bucket) - that was the
+        // "it still doesn't detect Discord" report.
+        idxEntry(QStringLiteral("Discord"),
+                 QStringLiteral("C:/Programs/Discord Inc/Discord.lnk"), discordExe),
+        idxEntry(QStringLiteral("Discord"),
+                 QStringLiteral("C:/Programs/Discord.lnk"), discordExe),
+        idxEntry(QStringLiteral("Discord"), discordExe),
+        idxEntry(QStringLiteral("Discord"),
+                 QStringLiteral("C:/Users/T/AppData/Local/Discord/app-1.0.9261/Discord.exe")),
+
+        // An autostart item for the same app. EXCLUDED regardless of its title:
+        // "remove" on a Startup shortcut means "stop launching this at login",
+        // which is not duplicate cleanup. Without the exclusion every
+        // self-starting app would be reported as a duplicate.
+        idxEntry(QStringLiteral("Discord"),
+                 QStringLiteral("C:/Programs/Startup/Discord.lnk"), discordExe),
+
+        // Different Qt SDK versions: different titles, so never grouped. This is
+        // the case a resolved-TARGET-only rule got wrong (it merged all three
+        // plus Command Prompt, which share one maintenance binary).
+        idxEntry(QStringLiteral("Qt 5.15.2 (MSVC 2019 64-bit)"), QStringLiteral("C:/Qt/5.15.2/qt.exe")),
+        idxEntry(QStringLiteral("Qt 6.11.1 (MSVC 2022 64-bit)"), QStringLiteral("C:/Qt/6.11.1/qt.exe")),
+
+        // Two unrelated vendors each shipping an Update.exe — the documented
+        // cost of a name rule. Asserted deliberately: it is the trade we chose,
+        // so a future change cannot silently reintroduce it without failing
+        // here and forcing a decision.
+        idxEntry(QStringLiteral("Update"), QStringLiteral("C:/VendorA/Update.exe")),
+        idxEntry(QStringLiteral("Update"), QStringLiteral("C:/VendorB/Update.exe")),
+
+        // A broken shortcut with no identity.
+        idxEntry(QStringLiteral("Ghost"), QStringLiteral("C:/Programs/Ghost.lnk")),
+    });
+
+    // Three groups: Discord (4), Qt (nothing - titles differ), Update (2).
+    QCOMPARE(m.duplicateGroupCount(), 2);
+
+    const QVariantList groups = m.duplicateGroups();
+    QCOMPARE(groups.size(), 2);
+    const QVariantMap discord = groups.at(0).toMap();
+    QCOMPARE(discord.value(QStringLiteral("name")).toString(), QStringLiteral("Discord"));
+    QCOMPARE(discord.value(QStringLiteral("count")).toInt(), 4);
+    const QStringList dpaths = discord.value(QStringLiteral("paths")).toStringList();
+    QVERIFY(dpaths.contains(QStringLiteral("C:/Programs/Discord Inc/Discord.lnk")));
+    QVERIFY(dpaths.contains(discordExe));
+    // The versioned build is IN - this is the row the previous rule dropped.
+    QVERIFY2(dpaths.contains(
+                 QStringLiteral("C:/Users/T/AppData/Local/Discord/app-1.0.9261/Discord.exe")),
+             "the versioned build copy is the same app and must be flagged");
+
+    // The autostart shortcut is NOT, and neither are the differing Qt versions.
+    const QSet<QString> flagged = [&] {
+        QSet<QString> out;
+        for (int i = 0; i < m.rowCount({}); ++i)
+            if (m.data(m.index(i), ResultsModel::IsDuplicateRole).toBool())
+                out.insert(m.data(m.index(i), ResultsModel::SubtitleRole).toString());
+        return out;
+    }();
+    QCOMPARE(flagged.size(), 6);   // 4 Discord + 2 Update
+    QVERIFY(!flagged.contains(QStringLiteral("C:/Programs/Startup/Discord.lnk")));
+    QVERIFY(!flagged.contains(QStringLiteral("C:/Qt/5.15.2/qt.exe")));
+    QVERIFY(!flagged.contains(QStringLiteral("C:/Qt/6.11.1/qt.exe")));
+    QVERIFY(!flagged.contains(QStringLiteral("C:/Programs/Ghost.lnk")));
+
+    // Removing a copy shrinks the group; the survivors stop being duplicates.
+    QSet<QString> removed;
+    m.setRemovedSource([&removed] { return removed; });
+    m.setRemoveStore([&removed](const QString &id, bool on) {
+        if (on) removed.insert(id); else removed.remove(id);
+    });
+    QVERIFY(m.removePath(QStringLiteral("C:/Programs/Discord.lnk")));
+    QCOMPARE(removed.size(), 1);
+    QCOMPARE(m.duplicateGroupCount(), 2);
+    QCOMPARE(m.duplicateGroups().first().toMap().value(QStringLiteral("count")).toInt(), 3);
+}
+
+// 2026-10-08: the duplicates panel's Remove button, tested against the REAL
+// row space. Since the 07-06 pivot the default list arrives through
+// setFileResults() into m_addedEntries - production never calls setEntries()
+// (AppProvider::setEntries is not wired in main.cpp), so a test built on
+// setEntries() would pass while the button silently did nothing in the app.
+void TstModel::duplicateRemoveProductionRowSpace_20261008()
+{
+    ResultsModel m;
+    const auto entry = [](const QString &name, const QString &path, const QString &launch = {}) {
+        AppEntry e;
+        e.source = AppEntry::Source::File;   // index rows, per the FileSearch snapshot
+        e.displayName = name;
+        e.targetPath = path;
+        e.launchTarget = launch; // resolved .lnk target, as the index walk stores
+        return e;
+    };
+    m.setFileResults(1, QString(), {
+        entry(QStringLiteral("Discord"), QStringLiteral("C:/Programs/Discord Inc/Discord.lnk"), QStringLiteral("C:/Discord/Discord.exe")),
+        entry(QStringLiteral("Discord"), QStringLiteral("C:/Programs/Discord.lnk"), QStringLiteral("C:/Discord/Discord.exe")),
+        entry(QStringLiteral("Steam"), QStringLiteral("C:/Programs/Steam/Steam.lnk")),
+    });
+
+    QCOMPARE(m.rowCount({}), 3);
+    QCOMPARE(m.duplicateGroupCount(), 1);
+
+    // Install the curation store BEFORE removing, exactly as main.cpp does — the
+    // removal has to go through it, and the rescan below has to read it back.
+    QSet<QString> persisted;
+    m.setHiddenSource([&persisted] { return persisted; });
+    m.setHideStore([&persisted](const QString &id, bool hidden) {
+        if (hidden) persisted.insert(id); else persisted.remove(id);
+    });
+
+    // Remove one copy: it must leave the list AND take the group with it.
+    QVERIFY2(m.hidePath(QStringLiteral("C:/Programs/Discord.lnk")),
+             "hidePath must act on the m_addedEntries row space production uses");
+    QCOMPARE(m.rowCount({}), 2);
+    QCOMPARE(m.duplicateGroupCount(), 0);
+    QCOMPARE(m.hiddenCount(), 1);
+
+    // A rescan of the scanned directory re-delivers EVERY entry from scratch -
+    // this second setFileResults IS that rescan. The removed path must stay gone,
+    // which is only true if the curation store is stamped onto the fresh batch.
+    m.setFileResults(2, QString(), {
+        entry(QStringLiteral("Discord"), QStringLiteral("C:/Programs/Discord Inc/Discord.lnk"), QStringLiteral("C:/Discord/Discord.exe")),
+        entry(QStringLiteral("Discord"), QStringLiteral("C:/Programs/Discord.lnk"), QStringLiteral("C:/Discord/Discord.exe")),
+        entry(QStringLiteral("Steam"), QStringLiteral("C:/Programs/Steam/Steam.lnk")),
+    });
+    QCOMPARE(m.rowCount({}), 2);
+    QCOMPARE(m.duplicateGroupCount(), 0);
+    for (int i = 0; i < m.rowCount({}); ++i)
+        QVERIFY2(m.data(m.index(i), ResultsModel::SubtitleRole).toString()
+                     != QStringLiteral("C:/Programs/Discord.lnk"),
+                 "the removed copy came back after a rescan of its directory");
+
+    // Reversible: show-hidden mode brings the row back, and the group with it.
+    m.setShowHidden(true);
+    QCOMPARE(m.duplicateGroupCount(), 1);
+}
+
+// 2026-10-08 (user report: "I click remove, it just goes to hidden — I still
+// see the app"): a removal must SURVIVE the next result batch.
+//
+// Production shape: typed queries resolve through the provider fan-out, and every
+// batch rebuilds its entries from scratch. The model's in-memory `hidden` flag is
+// therefore overwritten on each batch, so a removal only survives if the
+// persisted curation store is re-read and stamped onto the fresh rows. It was
+// not: hidePath() marked m_entries/m_addedEntries — which are permanently EMPTY
+// since the Phase-7 pivot (07-06) — so the row came back on the next keystroke,
+// and a rescan of its directory did the same.
+void TstModel::removalSurvivesRequery_20261008()
+{
+    AppProvider appProvider;
+    FileProvider fileProvider;
+    CalculatorProvider calcProvider;
+    CommandProvider cmdProvider;
+
+    QVector<AppEntry> catalog;
+    const QString keep = QStringLiteral("C:/Programs/Discord Inc/Discord.lnk");
+    const QString dupe = QStringLiteral("C:/Programs/Discord.lnk");
+    // Source::File, NOT Lnk: FileProvider tags EVERY index row Source::File, and
+    // SubtitleRole only carries the full path for File rows (for Lnk it is just
+    // the filename), so this is both the production shape and the only way to
+    // tell the two copies apart in an assertion.
+    catalog.append(idxEntry(QStringLiteral("Discord"), keep, QStringLiteral("C:/Discord/Discord.exe")));
+    catalog.append(idxEntry(QStringLiteral("Discord"), dupe, QStringLiteral("C:/Discord/Discord.exe")));
+    catalog.append(idxEntry(QStringLiteral("Spotify"), QStringLiteral("C:/Programs/Spotify/Spotify.lnk"), QStringLiteral("C:/Spotify/Spotify.exe")));
+
+    QVector<QString> lowers;
+    QVector<QVector<char>> bounds;
+    for (const AppEntry &e : catalog) {
+        QString lower;
+        QVector<char> b;
+        FuzzyMatcher::buildCaches(e.displayName, &lower, &b);
+        lowers.append(lower);
+        bounds.append(b);
+    }
+    appProvider.setEntries(catalog, lowers, bounds);
+    appProvider.setMeta({}, /*showHidden*/ false, /*favOnly*/ false, {});
+
+    // Stands in for CurationStore: persists writes and replays them on read.
+    QSet<QString> persisted;
+    auto *m = new ResultsModel;
+    m->setProviders({ &appProvider, &fileProvider, &calcProvider, &cmdProvider });
+    m->setPool(QThreadPool::globalInstance());
+    m->setHideStore([&persisted](const QString &id, bool hidden) {
+        if (hidden) persisted.insert(id); else persisted.remove(id);
+    });
+    m->setHiddenSource([&persisted] { return persisted; });
+
+    const auto drain = [] {
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 250)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    };
+    const auto settleFirst = [&] {
+        QElapsedTimer t;
+        t.start();
+        while (m->rowCount({}) == 0 && t.elapsed() < 5000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    };
+    const auto pathAt = [m](int i) {
+        return m->data(m->index(i), ResultsModel::SubtitleRole).toString();
+    };
+
+    m->setQuery(QStringLiteral("discord"));
+    settleFirst();
+    QCOMPARE(m->rowCount({}), 2);
+    QCOMPARE(m->duplicateGroupCount(), 1);
+
+    // Remove one copy. It must leave the list AND the duplicate set. The provider
+    // fan-out is async, so the row leaves on the next batch rather than
+    // synchronously - drain for it, same as any other provider mutation.
+    QVERIFY(m->hidePath(dupe));
+    QVERIFY2(persisted.contains(dupe), "the removal must be persisted, not just in memory");
+    drain();
+    QCOMPARE(m->rowCount({}), 1);
+    QCOMPARE(m->duplicateGroupCount(), 0);
+
+    // THE REGRESSION: re-run the query. The provider rebuilds every entry with
+    // hidden=false, so without the curation re-read stamp the row comes back.
+    m->setQuery(QStringLiteral("nothingmatches"));
+    drain();
+    m->setQuery(QStringLiteral("discord"));
+    settleFirst();
+    drain();
+    QCOMPARE(m->rowCount({}), 1);
+    QVERIFY2(m->data(m->index(0), ResultsModel::SubtitleRole).toString() != dupe,
+             "the removed copy came back on re-query — curation was never re-read");
+    QCOMPARE(m->duplicateGroupCount(), 0);
+
+    // Reversible, as the panel promises: show-hidden brings it back.
+    //
+    // NOTE: the rescan case is covered in duplicateRemoveProductionRowSpace_
+    // 20261008 instead. It cannot be driven from here: in production the empty
+    // query is served by FileSearch -> setFileResults, not by setQuery("")'s
+    // legacy branch, so re-delivering through setQuery would assert nothing
+    // (it returns 0 rows in provider mode, which is what made the first
+    // version of this assertion pass vacuously).
+    m->setShowHidden(true);
+    drain();
+    bool found = false;
+    for (int i = 0; i < m->rowCount({}); ++i)
+        found = found || pathAt(i) == dupe;
+    QVERIFY2(found, "show-hidden must still restore a removed copy");
+
+    // Every in-flight dispatch must land before the providers/model die.
+    drain();
+    delete m;
+}
+
+// 2026-10-08: removal is NOT hiding. The user rejected "Hide" outright: a
+// removed duplicate must leave the app, must not resurface under "Show hidden",
+// and must not inflate hiddenCount — while still deleting nothing and still
+// surviving a rescan. Each of those is a separate assertion because they are
+// separate mechanisms (an own store group, an own filter that outranks
+// show-hidden, and exclusion from hiddenCount).
+// 2026-10-08 (user report: "the context menu options aren't working. I can't
+// Hide/Unhide things"). Both directions were dead controls in production:
+//
+//   1. hideSelected/unhideSelected refused Source::File rows that were not
+//      manual picks (the CUR-04 escape-hatch guard). Since the Phase-7 pivot
+//      every visible row IS such a row, so both no-opped on the whole list
+//      while the context menu still offered the items.
+//   2. unhideSelected then rebuilt via the legacy buildAppOrder(), which
+//      resolves against the permanently-empty m_entries — so had it run, it
+//      would have wiped the list.
+//
+// Driven through the provider fan-out, exactly as main.cpp wires it.
+void TstModel::hideUnhideWorkOnProviderRows_20261008()
+{
+    AppProvider appProvider;
+    FileProvider fileProvider;
+    CalculatorProvider calcProvider;
+    CommandProvider cmdProvider;
+
+    QVector<AppEntry> catalog = {
+        lnkEntry(QStringLiteral("Steam"), QStringLiteral("C:/apps/Steam.exe")),
+        lnkEntry(QStringLiteral("SteamPlus"), QStringLiteral("C:/apps/SteamPlus.exe")),
+        lnkEntry(QStringLiteral("SteamTools"), QStringLiteral("C:/apps/SteamTools.exe")),
+    };
+    QVector<QString> lowers;
+    QVector<QVector<char>> bounds;
+    for (const AppEntry &e : catalog) {
+        QString l;
+        QVector<char> b;
+        FuzzyMatcher::buildCaches(e.displayName, &l, &b);
+        lowers.append(l);
+        bounds.append(b);
+    }
+    appProvider.setEntries(catalog, lowers, bounds);
+    appProvider.setMeta({}, false, false, {});
+
+    QSet<QString> hidden;
+    auto *m = new ResultsModel;
+    m->setProviders({ &appProvider, &fileProvider, &calcProvider, &cmdProvider });
+    m->setPool(QThreadPool::globalInstance());
+    m->setHideStore([&hidden](const QString &id, bool on) {
+        if (on) hidden.insert(id); else hidden.remove(id);
+    });
+    m->setHiddenSource([&hidden] { return hidden; });
+
+    const auto drain = [] {
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 400)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    };
+    const auto settleFirst = [&] {
+        QElapsedTimer t;
+        t.start();
+        while (m->rowCount({}) == 0 && t.elapsed() < 5000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    };
+    const auto nameAt = [m](int i) {
+        return m->data(m->index(i), ResultsModel::DisplayNameRole).toString();
+    };
+    const auto indexOf = [&](const QString &name) {
+        for (int i = 0; i < m->rowCount({}); ++i)
+            if (nameAt(i) == name) return i;
+        return -1;
+    };
+
+    m->setQuery(QStringLiteral("steam"));
+    settleFirst();
+    drain();
+    QCOMPARE(m->rowCount({}), 3);
+
+    // Every row must REPORT itself hideable, or the ✕ button stays hidden and
+    // the context menu is lying about it.
+    for (int i = 0; i < m->rowCount({}); ++i)
+        QVERIFY2(m->data(m->index(i), ResultsModel::IsHideableRole).toBool(),
+                 "a row with a persistable identity must report isHideable");
+
+    // HIDE one row: it must leave the visible list and be persisted.
+    m->selectIndex(indexOf(QStringLiteral("SteamPlus")));
+    m->hideSelected();
+    drain();
+    QCOMPARE(m->rowCount({}), 2);
+    QVERIFY2(hidden.contains(QStringLiteral("C:/apps/SteamPlus.exe")),
+             "hide must persist through the curation store");
+    QCOMPARE(indexOf(QStringLiteral("SteamPlus")), -1);
+
+    // The list must NOT be wiped (the legacy-rebuild bug).
+    QCOMPARE(m->rowCount({}), 2);
+    QVERIFY(indexOf(QStringLiteral("Steam")) >= 0);
+    QVERIFY(indexOf(QStringLiteral("SteamTools")) >= 0);
+
+    // It must survive a re-query (the curation store is re-stamped).
+    m->setQuery(QStringLiteral("s"));
+    drain();
+    m->setQuery(QStringLiteral("steam"));
+    drain();
+    QCOMPARE(m->rowCount({}), 2);
+    QCOMPARE(indexOf(QStringLiteral("SteamPlus")), -1);
+
+    // SHOW-HIDDEN brings it back, and UNHIDE removes the override.
+    m->setShowHidden(true);
+    drain();
+    const int back = indexOf(QStringLiteral("SteamPlus"));
+    QVERIFY2(back >= 0, "show-hidden must reveal the hidden row");
+    m->selectIndex(back);
+    m->unhideSelected();
+    drain();
+    QVERIFY2(!hidden.contains(QStringLiteral("C:/apps/SteamPlus.exe")),
+             "unhide must clear the persisted override");
+    // ...and the list must survive that too.
+    QCOMPARE(m->rowCount({}), 3);
+
+    drain();
+    delete m;
+}
+
+void TstModel::removalIsNotHiding_20261008()
+{
+    ResultsModel m;
+    const auto entry = [](const QString &name, const QString &path, const QString &launch = {}) {
+        AppEntry e;
+        e.source = AppEntry::Source::File;
+        e.displayName = name;
+        e.targetPath = path;
+        e.launchTarget = launch; // resolved .lnk target, as the index walk stores
+        return e;
+    };
+    // One channel only (setFileResults / m_addedEntries — the production default-list
+    // path). Mixing setEntries in would leave m_entries populated as well, so the
+    // merged order would carry both sets and the counts below would be nonsense.
+    QSet<QString> removed;
+    m.setRemovedSource([&removed] { return removed; });
+    m.setRemoveStore([&removed](const QString &id, bool on) {
+        if (on) removed.insert(id); else removed.remove(id);
+    });
+    m.setFileResults(1, QString(), {
+        entry(QStringLiteral("Discord"), QStringLiteral("C:/Programs/Discord Inc/Discord.lnk"), QStringLiteral("C:/Discord/Discord.exe")),
+        entry(QStringLiteral("Discord"), QStringLiteral("C:/Programs/Discord.lnk"), QStringLiteral("C:/Discord/Discord.exe")),
+        entry(QStringLiteral("Steam"), QStringLiteral("C:/Programs/Steam/Steam.lnk")),
+    });
+    QCOMPARE(m.rowCount({}), 3);
+    QCOMPARE(m.duplicateGroupCount(), 1);
+
+    QVERIFY(m.removePath(QStringLiteral("C:/Programs/Discord.lnk")));
+    QCOMPARE(removed.size(), 1);
+    QCOMPARE(m.rowCount({}), 2);
+    QCOMPARE(m.duplicateGroupCount(), 0);
+
+    // The decisive difference from Hide: hiddenCount stays 0, so the footer
+    // never grows a "Show hidden (1)" entry pointing at a removed row.
+    QCOMPARE(m.hiddenCount(), 0);
+
+    // And "Show hidden" cannot resurrect it.
+    m.setShowHidden(true);
+    QCOMPARE(m.rowCount({}), 2);
+    for (int i = 0; i < m.rowCount({}); ++i)
+        QVERIFY(m.data(m.index(i), ResultsModel::SubtitleRole).toString()
+                    != QStringLiteral("C:/Programs/Discord.lnk"));
+
+    // Survives a rescan that re-delivers everything.
+    m.setFileResults(1, QString(), {
+        entry(QStringLiteral("Discord"), QStringLiteral("C:/Programs/Discord Inc/Discord.lnk"), QStringLiteral("C:/Discord/Discord.exe")),
+        entry(QStringLiteral("Discord"), QStringLiteral("C:/Programs/Discord.lnk"), QStringLiteral("C:/Discord/Discord.exe")),
+        entry(QStringLiteral("Steam"), QStringLiteral("C:/Programs/Steam/Steam.lnk")),
+    });
+    m.setShowHidden(false);
+    QCOMPARE(m.rowCount({}), 2);
+    for (int i = 0; i < m.rowCount({}); ++i)
+        QVERIFY(m.data(m.index(i), ResultsModel::SubtitleRole).toString()
+                    != QStringLiteral("C:/Programs/Discord.lnk"));
+
+    // An empty path is the only rejection.
+    QVERIFY(!m.removePath(QString()));
+}
 
 void TstModel::emptyQueryFullList_D01_D02()
 {
@@ -404,20 +1083,54 @@ void TstModel::pathOnlyBaseScore_D07()
     // D-07: a file whose NAME doesn't match the query still ranks (users type
     // "tax 2025" meaning a path) — but at the base tier (kPathMatchScore=100),
     // below every name-matched row.
+    //
+    // 2026-09-15: the fixture path was "C:\reports\report.txt", which contains
+    // NO 'a' at all — so the query was never a subsequence of it and this test
+    // only passed because of the very bug being fixed (see
+    // nonMatchingNameNotAdmitted_20260915 in tst_index: searching "Discord"
+    // listed "Wow"). The path now genuinely contains the query, which is what
+    // D-07 actually describes: a path MATCH with a non-matching name.
     ResultsModel m;
     m.setEntries({ lnkEntry(QStringLiteral("Tax 2025 Planner"), {}) });
     m.setQuery(QStringLiteral("tax 2025"));
     m.setFileResults(1, QStringLiteral("tax 2025"),
-                     { fileEntry(QStringLiteral("report.txt"), QStringLiteral("C:\\reports\\report.txt")) });
+                     { fileEntry(QStringLiteral("report.txt"),
+                                 QStringLiteral("C:\\Users\\Trick\\Tax 2025\\report.txt")) });
 
     const int appScore = FuzzyMatcher::score(QStringLiteral("tax 2025"), QStringLiteral("Tax 2025 Planner")).score;
     const int fileNameScore = FuzzyMatcher::score(QStringLiteral("tax 2025"), QStringLiteral("report.txt")).score;
     QCOMPARE(fileNameScore, 0); // path-only: the name itself does not match
     QVERIFY(appScore > 0);
+    // The path really does contain the query as a subsequence — otherwise this
+    // test would be asserting the bug again rather than the feature. Note this
+    // must be a plain subsequence scan, NOT FuzzyMatcher::score: that matcher
+    // rejects '\' in the target and is only ever applied to display names. The
+    // path-level rule lives in FileIndex::queryCandidates.
+    const QString path = QStringLiteral("C:\\Users\\Trick\\Tax 2025\\report.txt");
+    {
+        const QString q = QStringLiteral("tax 2025").toCaseFolded();
+        const QString hay = path.toCaseFolded();
+        int qi = 0;
+        for (int hi = 0; hi < hay.size() && qi < q.size(); ++hi)
+            if (hay.at(hi) == q.at(qi))
+                ++qi;
+        QCOMPARE(qi, q.size()); // "tax 2025" IS a subsequence of the path
+    }
 
     QCOMPARE(m.rowCount({}), 2); // the name-matched app ranks above the path-only file row
     QCOMPARE(displayNameAt(m, 0), QStringLiteral("Tax 2025 Planner"));
     QCOMPARE(displayNameAt(m, 1), QStringLiteral("report.txt"));
+
+    // 2026-09-15: the converse — a file whose path does NOT contain the query
+    // is never admitted, however long its name is. Previously this row appeared
+    // at the base tier and surfaced as a bogus result.
+    ResultsModel m2;
+    m2.setEntries({ lnkEntry(QStringLiteral("Tax 2025 Planner"), {}) });
+    m2.setQuery(QStringLiteral("tax 2025"));
+    m2.setFileResults(1, QStringLiteral("tax 2025"),
+                      { fileEntry(QStringLiteral("Wow.exe"), QStringLiteral("C:\\apps\\Wow.exe")) });
+    QCOMPARE(m2.rowCount({}), 1);
+    QCOMPARE(displayNameAt(m2, 0), QStringLiteral("Tax 2025 Planner"));
 }
 
 void TstModel::staleGenerationDropped_D15()
@@ -543,12 +1256,19 @@ void TstModel::fileRangesShapeForQml()
     // Phase-5 highlight contract: name-matched file rows carry the same
     // [[start, length]] shape as app rows; path-only rows carry NO ranges
     // (there is nothing to highlight).
+    //
+    // 2026-09-15: the "path-only" row's path was "C:\reports\Report", which
+    // does NOT contain "cal" — it only ever appeared because a name scoring 0
+    // was admitted on path evidence it didn't have (the bug fixed alongside
+    // this). The path now really contains the query, so this exercises the
+    // genuine path-only case the contract describes: admitted, but with no
+    // ranges to highlight.
     ResultsModel m;
     m.setEntries({ lnkEntry(QStringLiteral("Calculator"), {}) });
     m.setQuery(QStringLiteral("cal"));
     m.setFileResults(1, QStringLiteral("cal"),
                      { fileEntry(QStringLiteral("Calc.exe"), QStringLiteral("C:\\x\\Calc.exe")),
-                       fileEntry(QStringLiteral("Report"), QStringLiteral("C:\\reports\\Report")) }); // path-only row
+                       fileEntry(QStringLiteral("Report"), QStringLiteral("C:\\Users\\cal\\Report")) }); // path-only row
 
     QCOMPARE(m.rowCount({}), 3); // Calc.exe, Calculator, Report
     const QVariantList fileRanges = m.data(m.index(0), ResultsModel::MatchRangesRole).toList();
@@ -721,13 +1441,23 @@ void TstModel::unhideWritesShownIds_CUR03()
 
 void TstModel::hideSelectedNoOpOnFile_CUR04()
 {
-    // CUR-04 escape-hatch guard: File rows can never be curated —
-    // hideSelected is a no-op and the store is never called.
+    // RENAMED BEHAVIOUR (2026-10-08). This test used to assert the CUR-04
+    // escape-hatch rule: "File rows can never be curated - hideSelected is a
+    // no-op and the store is never called." That rule was removed, because since
+    // the Phase-7 pivot (07-06) EVERY row the launcher shows is a Source::File
+    // index row, so it made Hide a dead control across the whole list while the
+    // context menu still offered it.
+    //
+    // It is kept (under the old name, so the slot list stays stable) and
+    // inverted: a File row IS hideable now, the store IS called, and the row
+    // leaves the list. The Command-row exclusion is asserted here instead,
+    // because that is the guard that actually still holds - a command's id is
+    // its typed text and must never be persisted as a hide identity.
     ResultsModel m;
-    m.setEntries({ lnkEntry(QStringLiteral("Alpha"), QStringLiteral("C:\\apps\\a.exe")),
-                   fileEntry(QStringLiteral("noise.exe"), QStringLiteral("C:\\apps\\Noise.exe")) });
+    m.setEntries({ lnkEntry(QStringLiteral("Alpha"), QStringLiteral("C:/apps/a.exe")),
+                   fileEntry(QStringLiteral("noise.exe"), QStringLiteral("C:/apps/Noise.exe")) });
     m.setQuery(QStringLiteral("noise")); // D-14: file rows render only on a live query
-    QCOMPARE(m.rowCount({}), 1); // the File row is the only result
+    QCOMPARE(m.rowCount({}), 1);         // the File row is the only result
     m.selectIndex(0);
 
     StoreSpy spy;
@@ -735,8 +1465,10 @@ void TstModel::hideSelectedNoOpOnFile_CUR04()
 
     m.hideSelected();
 
-    QCOMPARE(m.rowCount({}), 1); // unchanged
-    QCOMPARE(spy.calls.isEmpty(), true); // the store never saw a File row
+    QCOMPARE(m.rowCount({}), 0);                    // it left the list
+    QCOMPARE(spy.calls.size(), 1);                  // and the store saw it
+    QCOMPARE(spy.calls.first().second, true);
+    QCOMPARE(spy.calls.first().first, QStringLiteral("C:/apps/Noise.exe"));
 }
 
 void TstModel::hideAddedRow_D14()
@@ -925,29 +1657,40 @@ void TstModel::unhideNoOpOnVisibleRow_L01()
 
 void TstModel::isHideableRole_CUR04()
 {
-    // 2026-08-15: the remove button renders only on rows hideSelected() will
-    // actually hide — CUR-04 parity exposed as a role. App rows and manual
-    // picks (fromAdded) are hideable; a TRANSIENT index file row (fromFiles,
-    // live query) is not — the search escape hatch stays open.
+    // 2026-08-15, UPDATED 2026-10-08. The remove button renders only on rows
+    // hideSelected() will actually hide, so the role has to track the real rule.
+    //
+    // It used to say "a transient index file row is NOT hideable (CUR-04 escape
+    // hatch)". Since the Phase-7 pivot that class is the entire list, which made
+    // the ✕ button disappear everywhere and left the context menu offering Hide
+    // for rows it would refuse. The rule now matches hideSelected(): every row
+    // with a persistable identity is hideable.
     ResultsModel m;
-    m.setEntries({ lnkEntry(QStringLiteral("Alpha"), QStringLiteral("C:\\apps\\a.exe")) });
+    m.setEntries({ lnkEntry(QStringLiteral("Alpha"), QStringLiteral("C:/apps/a.exe")) });
     m.setQuery(QString());
-    // D-14: manual pick on the added channel — a File-source row that IS
-    // hideable (curated like an app, 2026-08-12).
     m.setFileResults(0, QString(), { fileEntry(QStringLiteral("Noise.exe"),
-                                               QStringLiteral("C:\\x\\Noise.exe")) });
+                                               QStringLiteral("C:/x/Noise.exe")) });
     QCOMPARE(m.rowCount({}), 2);
     QCOMPARE(m.data(m.index(0), ResultsModel::IsHideableRole).toBool(), true); // added pick
     QCOMPARE(m.data(m.index(1), ResultsModel::IsHideableRole).toBool(), true); // app row
 
-    // Live query → the SAME file row arrives on the transient index channel:
-    // never hideable.
+    // The SAME File-source row on a live query used to report false here.
+    // It must now report true, or the ✕ button vanishes and the context menu
+    // disagrees with the model.
     m.setQuery(QStringLiteral("noise"));
     m.setFileResults(1, QStringLiteral("noise"),
                      { fileEntry(QStringLiteral("Noise.exe"),
-                                 QStringLiteral("C:\\x\\Noise.exe")) });
+                                 QStringLiteral("C:/x/Noise.exe")) });
     QCOMPARE(m.rowCount({}), 1);
-    QCOMPARE(m.data(m.index(0), ResultsModel::IsHideableRole).toBool(), false);
+    QCOMPARE(m.data(m.index(0), ResultsModel::IsHideableRole).toBool(), true);
+
+    // The exclusion that still holds: a row with no identity at all is not
+    // hideable, because there is nothing to persist against.
+    ResultsModel m2;
+    m2.setEntries({ lnkEntry(QStringLiteral("Ghost"), QString()) });
+    m2.setQuery(QStringLiteral("ghost"));
+    if (m2.rowCount({}) > 0)
+        QCOMPARE(m2.data(m2.index(0), ResultsModel::IsHideableRole).toBool(), false);
 }
 
 void TstModel::canRevealRole()

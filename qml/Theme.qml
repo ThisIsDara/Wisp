@@ -110,6 +110,14 @@ QtObject {
     readonly property int removeButtonRadius: 12 // fully rounded circle (declared sub-grid garnish)
     readonly property int scrollbarWidth: 6       // overlay thumb width (declared 6px exception)
     readonly property int scrollbarInset: 2       // thumb inset from the list's right edge (overlay)
+    // 2026-09-15: right-edge safe inset for row content. The scrollbar is an
+    // OVERLAY (zero layout footprint — it never narrows the list), so it draws
+    // ON TOP of whatever the row pins to the right edge. Row chrome used to sit
+    // at `parent.width - spaceSm` (8px) — exactly the scrollbar's own footprint
+    // (6px thumb + 2px inset) — so the hover "X" landed under the thumb and
+    // looked jammed against the window border. Every right-pinned row element
+    // now insets by the scrollbar's width PLUS a breathing gap.
+    readonly property int rowRightInset: scrollbarWidth + scrollbarInset + spaceSm // 6+2+8 = 16
     readonly property int scrollbarRadius: 3      // thumb corner radius
     readonly property int emptyStateGlyphSize: 16 // empty-state glyph (UI-SPEC Typography rule 4: fontSizeSubtitle × 4/3)
     readonly property int emptyStateWellSize: 48  // empty-state glyph well (48px, 4-grid) — the composed well
@@ -132,9 +140,9 @@ QtObject {
     // Window + surface geometry (480x360 → 480x560 + scan section, 07-05;
     // surface = window − 2x16 shadow margin, same shell as the launcher).
 readonly property int settingsWindowWidth: 480
-readonly property int settingsWindowHeight: 756   // right-aligned scan/updates actions + breathing room: rows shrink, then scan roots grew to 36px rows (was 740)
+readonly property int settingsWindowHeight: 813   // right-aligned scan/updates actions + breathing room: rows shrink, then scan roots grew to 36px rows (was 740)
 readonly property int settingsSurfaceWidth: 448
-readonly property int settingsSurfaceHeight: 724  // window − 2x16 shadow margin (was 708)
+readonly property int settingsSurfaceHeight: 781  // window − 2x16 shadow margin (was 708)
     readonly property int colorDialogWindowWidth: 280
     readonly property int colorDialogWindowHeight: 320
     readonly property int colorDialogSurfaceWidth: 248
@@ -161,32 +169,89 @@ readonly property int settingsSurfaceHeight: 724  // window − 2x16 shadow marg
     readonly property int ringWidth: 2            // declared sub-grid garnish (selection indicator)
     readonly property int swatchRadius: 6         // declared sub-grid exception (tokenized well corners)
     readonly property color swatchWellBg: "#2D2D30" // strip backing / unselected swatch well (= surfaceSecondary)
-    // Fields/rows (UI-SPEC Spacing Scale; row heights are 4-grid: 64/88/64/158)
+    // ── Settings layout (2026-09-15 regroup) ────────────────────────────
+    // The surface is FIVE labelled sections instead of six undifferentiated
+    // rows. That fixes two placement faults at once:
+    //   1. Every row now follows ONE pattern — "label + sub-label LEFT,
+    //      control RIGHT" — or, for the two blocks holding several controls,
+    //      "header line with its action pinned RIGHT, controls below". Before,
+    //      the pattern alternated row-by-row, so Shortcuts (label-left) looked
+    //      structurally unlike Updates (header-top) directly above it.
+    //   2. The accent row finally follows the header+action pattern: "Accent
+    //      color" and "Custom…" share the header line (action right) and the
+    //      swatches sit below. "Custom…" used to butt against the end of the
+    //      swatch strip, where it read as a tenth swatch.
+    //
+    // Vertical budget — the content column is 781 surface − 32 drag header −
+    // 8 top pad − 24 bottom pad = 717 available, and uses all 717. The Column
+    // applies settingsRowGap (8) between EVERY child, so a section boundary is
+    // two spacings plus a 2px spacer item = 18.
+    //   General     label 24 + row 48 + gap 8 + row 48                    = 128
+    //   Appearance  label 24 + header 22 + gap 9 + swatches 28           =  83
+    //   Files       label 24 + header 32 + gap 10 + roots 72 + 6+28+6+28 = 212
+    //   Updates     label 24 + row 48 + gap 10 + status 34               = 116
+    //   Reference   label 24 + row 48                                     =  72
+    //   = 611 + 4 spacers(2) + 14 column spacings(112) = 725... see the
+    //   settingsWindowContract test, which measures the LIVE implicitHeight
+    //   and fails on overflow OR on >24px of dead space. Do not hand-tune
+    //   these numbers without re-running it.
+    //
+    // Window height grew 756 -> 813 for the breathing room. The screen-fit
+    // scale (Theme.fitScale) absorbs it on short displays (~0.87x on 1366x768)
+    // and is exactly 1.0 on 1080p and taller.
+    readonly property int settingsSectionLabel: 24   // section heading row (12px label)
+    readonly property int settingsSectionGap: 18     // space between sections
+    readonly property int settingsRowSingle: 48       // label + sub + right-hand control
+    readonly property int settingsRowHotkey: 48       // settingsRowSingle family
+    readonly property int settingsRowAutostart: 48 // settingsRowSingle family
+    readonly property int settingsRowShortcuts: 48 // settingsRowSingle family
+    // "Appearance" block: header line carrying the label + the Custom action,
+    // then the swatch strip on its own line (9x28 + 8x8 = 316px — it cannot
+    // share a line with the label inside the 400px content width).
+    readonly property int settingsAccentHeader: 22 // "Accent color" + "Custom"
+    readonly property int settingsAccentGap: 9     // header line -> swatch strip
+    readonly property int settingsAccentRow: 28    // swatch strip height (= swatchRingSize)
+    // Breathing gap between a block's 2-line header and its first control —
+    // deliberately larger than settingsRowGap so the roots/interval row never
+    // reads as part of the header.
+    readonly property int settingsScanGap: 10
+    // Inner gaps inside the Files block (roots -> interval -> action).
+    readonly property int settingsScanRowGap: 6
+    // Fields/rows (UI-SPEC Spacing Scale; row heights are 4-grid)
     readonly property int fieldRadius: 6          // hotkey value well corner (tokenizes shipped capture-dialog literal)
     readonly property int fieldHeight: 36         // hotkey value well height (tokenizes shipped capture-dialog literal)
     readonly property int stepperSize: 24         // interval ± chip footprint (= swatchSize, declared 4-grid)
-    readonly property int settingsRowHotkey: 64
-    readonly property int settingsRowAccent: 88
-    readonly property int settingsRowAutostart: 64
-    readonly property int settingsRowGap: 12      // spaceMd — declared (not 16; vertical budget 488 <= 528)
-    readonly property int settingsPad: 24         // content column margins (spaceXl)
-    // "Scan locations" section (07-06, header-on-top polish): header(32) +
-    // breathing gap(12) + roots(72: 2 roomy 36px rows so the Remove buttons
-    // clear each other and the hairline) + gap(4) + interval(28) + gap(4) +
-    // action(28) + bottom pad(8) = 188 exact.
-    readonly property int settingsRowScan: 188
+    readonly property int settingsRowAccent: 59    // header 22 + gap 9 + swatch strip 28
+    readonly property int settingsRowGap: 8          // gap between rows inside a section
+    readonly property int settingsPad: 24            // content column margins (spaceXl)
+    // "Scan locations" section (07-06 header-on-top; 2026-10-08 folders became
+    // wrapping chips). The block is now split so the folders area can GROW
+    // without disturbing anything else:
+    //   base(110) = header 32 + gap 10 + gap 6 + interval 28 + gap 6 + action 28
+    //   + folders(measured) = the full block height.
+    // `settingsRowScanFolders` is the folders space the base window ALREADY
+    // carries (it used to be 2 fixed 36px root rows) — so the 813px window is
+    // unchanged until the chips genuinely need more, then the window grows and
+    // Theme.fitScale shrinks the lot on a short screen. Never a scroll.
+    readonly property int settingsRowScanBase: 110   // scan block WITHOUT the folders area
+    readonly property int settingsRowScanFolders: 72 // folders space in the base window budget
     readonly property int settingsRowScanItem: 28 // interval row / action row height
-    readonly property int settingsRowScanRoot: 36 // per-root row — 24px Remove button + 6px clearance top/bottom
-    readonly property int settingsRowScanRoots: 72 // visible root-list height (2 rows of 36)
+    // Folders as wrapping chips (2026-10-08). The old height-capped ScrollView
+    // meant a third folder was only reachable by scrolling inside the list —
+    // the one scroll this surface should never have had. Chips wrap, so every
+    // folder is on screen at once; the block and window grow instead.
+    readonly property int settingsChipHeight: 28    // chip height (= settingsRowScanItem, 4-grid)
+    readonly property int settingsChipGap: 6         // chip-to-chip gap, both axes (= settingsScanRowGap)
+    readonly property int settingsChipPadH: 10       // horizontal padding inside a chip
+    readonly property int settingsChipMaxTextW: 180 // basename elides past this; tooltip carries the full path
     readonly property int settingsSectionHeader: 32 // section header (18 title + 2 + 12 subtitle)
     // Phase 8 Updates section (header-on-top polish, right-aligned check
     // actions): header(32) + gap(8) + toggle row(28) + gap(4) + check row(40:
     // status+hint stacked left, buttons right) + gap(4) + download bar(0..6)
     // + bottom pad(8) = 124..130 within 132.
-    readonly property int settingsRowUpdates: 132   // right-aligned layout (was 160)
-    readonly property int settingsRowUpdatesCheck: 40 // status(20) + hint(16) stacked, buttons centered beside
-    // Phase 12 Show-shortcuts row: 64px (hotkey-row family) — opens ShortcutsWindow.
-    readonly property int settingsRowShortcuts: 64
+    readonly property int settingsRowUpdates: 92    // toggle row(48) + gap(10) + status row(34)
+    readonly property int settingsUpdatesGap: 10  // toggle row -> status line
+    readonly property int settingsRowUpdatesCheck: 34 // status + hint stacked left, buttons beside
     // Phase 8 update dialog (UI-SPEC S2 geometry).
     // Prompt inner budget: title(20)+gap(8)+subcopy(2x16)+gap(8)+buttons(28)
     // = 96 <= 136 (window - 2x16 shadow/surface margins). UAT fix: 132 was
@@ -214,6 +279,14 @@ readonly property int settingsSurfaceHeight: 724  // window − 2x16 shadow marg
     // button turns text + border danger-red so the action reads as destructive.
     readonly property color dangerText: danger
     readonly property color dangerBorder: danger
+    // 2026-10-08: the duplicate-app affordance deliberately declares NO tokens
+    // of its own. The first cut invented an amber pair (#E3A008 / #6B4E00) plus
+    // a 10px badge size, which read as a foreign element bolted onto the shell -
+    // every other colour in this file is either a neutral or DERIVED from the
+    // accent, and the app's small-label idiom is already fontSizeKeycap +
+    // semibold + accentLight (see the row keycap). So the row badge is a plain
+    // accentLight label at keycap size with no box and no border, and the footer
+    // indicator is an accentLight label matching "Show hidden (N)" exactly.
     // Primary-button text on accent fill (declared exception — the custom
     // dialog OK button). Tokenizes the shipped capture-dialog OK-button
     // literal so that file's zero-hex gate holds; pixel-identical.
@@ -228,9 +301,61 @@ readonly property int settingsSurfaceHeight: 724  // window − 2x16 shadow marg
     // inside the list — scale from the row center, never geometry (no reflow).
     readonly property real selectedScale: 1.04
 
+    // --- Screen-fit (2026-09-15) ---
+    // Every window here has fixed, token-sized geometry on purpose (the
+    // settings surface is an exact-fit layout — growth goes through tokens,
+    // not a ScrollView). Fixed geometry has one failure mode: on a short
+    // screen it exceeds the usable height and the window gets placed at a
+    // NEGATIVE y, clipping its top off-screen. 1366x768 leaves ~728px usable
+    // with the taskbar, against the settings window's 756px.
+    // fitScale() returns the largest scale <= 1 that fits the current screen
+    // area, so each caller scales its surface as ONE unit and the internal
+    // layout math stays untouched. It is exactly 1 on any screen with room,
+    // so this is a no-op for the common case.
+    readonly property int fitMargin: 12   // px kept clear on all four screen edges
+
+    function fitScale(w, h) {
+        // Screen.* is UNDEFINED (not 0) until the window is actually
+        // attached to a screen — e.g. a window built from C++ that has not
+        // been shown yet. Any arithmetic on that yields NaN, and a NaN scale
+        // reaches QTransform::scale and aborts the process (caught by
+        // tst_shell as "ASSERT !std::isnan"). isFinite() is the guard that
+        // actually catches it — NaN <= 0 is false, so a magnitude check
+        // alone lets it through. Anything unusable falls back to 1 (no
+        // scaling), which is the pre-2026-09-15 behaviour.
+        const availW = Screen.availableWidth
+        const availH = Screen.availableHeight
+        if (!isFinite(availW) || !isFinite(availH) || availW <= 0 || availH <= 0)
+            return 1
+        if (!isFinite(w) || !isFinite(h) || w <= 0 || h <= 0)
+            return 1
+        return Math.min(1, (availW - fitMargin * 2) / w, (availH - fitMargin * 2) / h)
+    }
+
     // --- Typography (UI-SPEC Typography) ---
     readonly property string fontFamily: "Segoe UI Variable"
     readonly property string fontFamilyFallback: "Segoe UI"
+
+    // JetBrains Mono (2026-09-15, SIL OFL-1.1 — bundled, not system-looked-up).
+    // Scoped to the two CONTENT surfaces — the query field and the result
+    // titles — where fixed pitch genuinely helps (filenames line up; the
+    // query reads like a command bar). The chrome (settings, menus, buttons,
+    // labels) stays on Segoe UI Variable: mono is wider at the same pixel
+    // size, and the settings surface is an exact-fit 448x724 layout where
+    // every label would have to grow.
+    // The faces are registered from qrc at STARTUP in main.cpp
+    // (QFontDatabase::addApplicationFont over the two assets/fonts TTFs) — a
+    // Theme-level FontLoader is impossible here: Theme is a `pragma Singleton`
+    // QtObject, which has NO default property, so child objects can't attach
+    // (it fails the whole component with "Cannot assign to non-existent
+    // default property"). C++ registration also guarantees the family exists
+    // before any Text binds, which a lazily-created QML object would not.
+    // Regular + SemiBold are both registered, so weight 600 resolves to the
+    // real SemiBold face instead of a synthetic emboldening. If registration
+    // ever failed, Qt falls back to a default family on its own — text still
+    // renders, just in the old face.
+    readonly property string fontFamilyMono: "JetBrains Mono"
+
     readonly property int fontSizeQuery: 18
     readonly property int fontSizeTitle: 15
     readonly property int fontSizeSubtitle: 12

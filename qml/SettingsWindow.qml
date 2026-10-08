@@ -17,8 +17,25 @@ Window {
     id: root
     title: "wisp — settings"          // a11y / taskbar identity (UI-SPEC Copywriting)
     flags: Qt.Tool | Qt.FramelessWindowHint
-    width: Theme.settingsWindowWidth
-    height: Theme.settingsWindowHeight
+    // 2026-09-15 (screen-fit): the surface keeps its exact token geometry and
+    // scales as ONE unit when the screen is too short for it (1366x768 leaves
+    // ~728px usable vs this window's 756px — it used to be placed at a
+    // negative y and clipped off the top). Exactly 1 on any roomier screen.
+    //
+    // 2026-10-08: the window now GROWS with the folders list instead of
+    // scrolling it. `foldersExtra` is how far the wrapping chip rows exceed the
+    // folders space the base window already carries (Theme.settingsRowScanFolders,
+    // 72px — previously two fixed 36px root rows), so a typical folder list
+    // leaves the window at exactly its old 813px and only a genuinely tall list
+    // makes it taller. fitScale then shrinks the whole unit to fit the screen,
+    // the same mechanism a short display already used: nothing scrolls, nothing
+    // is hidden.
+    readonly property int foldersExtra: Math.max(0, foldersArea.height - Theme.settingsRowScanFolders)
+    readonly property int winHeight: Theme.settingsWindowHeight + foldersExtra
+    readonly property int surfaceHeight: Theme.settingsSurfaceHeight + foldersExtra
+    readonly property real uiScale: Theme.fitScale(Theme.settingsWindowWidth, winHeight)
+    width: Math.round(Theme.settingsWindowWidth * uiScale)
+    height: Math.round(winHeight * uiScale)
     color: "transparent"
     visible: false   // resident — the controller shows it (06-03)
 
@@ -61,10 +78,21 @@ Window {
 
     // Centered on primary screen (capture-dialog geometry logic); the
     // controller re-centers on every open (UI-SPEC Geometry contract).
-    Component.onCompleted: {
-        x = Screen.availableX + Math.round((Screen.availableWidth - width) / 2)
-        y = Screen.availableY + Math.round((Screen.availableHeight - height) / 2)
+    function centerOnScreen() {
+        const aw = Screen.availableWidth
+        const ah = Screen.availableHeight
+        if (!isFinite(aw) || !isFinite(ah))
+            return   // no screen yet — the onUiScaleChanged pass re-runs this
+        x = Screen.availableX + Math.round((aw - width) / 2)
+        y = Screen.availableY + Math.round((ah - height) / 2)
     }
+    Component.onCompleted: centerOnScreen()
+    // 2026-09-15: Screen.* is undefined until the window is actually attached
+    // to a screen, so uiScale is still 1 when onCompleted runs and the window
+    // only resizes a moment later — without this the surface stays offset by
+    // the height delta and reads as mis-centered. Re-centering when the scale
+    // settles keeps it honest.
+    onUiScaleChanged: centerOnScreen()
 
     function toggleAutostart() {
         if (settingsController)
@@ -97,20 +125,47 @@ Window {
             settingsController.openShortcuts()
     }
 
+    // Folder-chip label (2026-10-08): the folder's own name, not its full path,
+    // so a chip stays compact enough to wrap several to a line. Handles both
+    // separator flavours (roots are normalised to native, but a hand-edited INI
+    // or a future '/' producer shouldn't blank the chip) and a trailing
+    // separator ("C:\Games\" -> "Games", not "").
+    function chipFolderName(path) {
+        if (!path)
+            return ""
+        const trimmed = String(path).replace(/[\\/]+$/, "")
+        const cut = Math.max(trimmed.lastIndexOf("\\"), trimmed.lastIndexOf("/"))
+        return cut >= 0 ? trimmed.slice(cut + 1) : trimmed
+    }
+
     // Static pre-rendered shadow — same shell as MainWindow (assets/shadow.png,
-    // 16px margin, opacity 0.45).
+    // 16px margin, opacity 0.45). Explicit natural size + TopLeft origin so it
+    // tracks the surface under the screen-fit scale (anchors.fill would
+    // measure the ALREADY-scaled window and re-apply the factor).
     Image {
-        anchors.fill: parent
+        x: 0
+        y: 0
+        width: Theme.settingsWindowWidth
+        height: root.winHeight
+        scale: root.uiScale
+        transformOrigin: Item.TopLeft
         source: "assets/shadow.png"
         opacity: Theme.shadowOpacity
     }
 
     // The surface (448x724 + 2x16 shadow margin inside the 480x756 window).
+    // Same TopLeft-scaled treatment as the shadow above, so the 16px margin
+    // stays even when the whole surface is scaled down on a short screen.
+    // 2026-10-08: both heights track root.winHeight/surfaceHeight, which grow
+    // with the folders chips.
     Rectangle {
         id: surface
-        anchors.centerIn: parent
+        x: (Theme.settingsWindowWidth - Theme.settingsSurfaceWidth) / 2
+        y: (root.winHeight - root.surfaceHeight) / 2
         width: Theme.settingsSurfaceWidth
-        height: Theme.settingsSurfaceHeight
+        height: root.surfaceHeight
+        scale: root.uiScale
+        transformOrigin: Item.TopLeft
         radius: Theme.radiusSurface
         color: Theme.surface
         border.color: Theme.border
@@ -175,13 +230,19 @@ Window {
             }
         }
 
-        // Content column — exact-fit vertical budget (right-aligned scan/
-        // updates actions, 12px scan breathing gap, roomy 36px root rows):
-        // 8 top + 6 rows 64/88/64/188/132/64 (600) + 5×12 gaps (60) + 24
-        // bottom pad = 692 within the 692 available (724 surface − 32 drag
-        // header) — no bottom waste (research OQ1: growth via tokens, not
-        // a ScrollView).
+        // Content column — five labelled sections (2026-09-15 regroup). Every
+        // simple row follows ONE pattern (label + sub-label left, control
+        // right); the two blocks that hold several controls use a header line
+        // with their action pinned right and the controls below. Spacing is
+        // settingsRowGap INSIDE a section and settingsSectionGap BETWEEN them,
+        // so the grouping is legible without adding boxes or extra chrome.
+        // Budget: 8 top + 602 rows + 56 section gaps + 24 bottom = 690 of the
+        // 692 available (724 surface − 32 drag header) — still an exact fit.
         Column {
+            id: contentColumn
+            // objectName mirrors the id so tests can locate this exact column
+            // (findChild resolves objectName, not a QML id).
+            objectName: "settingsContentColumn"
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
@@ -192,7 +253,25 @@ Window {
             anchors.topMargin: Theme.spaceSm
             spacing: Theme.settingsRowGap
 
-            // ── Hotkey row (64px) — well click opens the capture dialog ──
+            // ── Section heading ──────────────────────────────────────
+            // 2026-09-15: the five section headings replace the per-row
+            // hairlines that used to separate rows. A hairline above EVERY row
+            // read as six equal-weight settings; the headings group them into
+            // five named areas (General / Appearance / Files / Updates /
+            // Reference) and make the grouping legible at a glance. Same
+            // colors as before (textSecondary) — only placement changed.
+            Text {
+                text: "General"
+                height: Theme.settingsSectionLabel
+                verticalAlignment: Text.AlignVCenter
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeSubtitle
+                font.weight: Theme.fontWeightSemibold
+                font.letterSpacing: 0.6
+                color: Theme.textSecondary
+            }
+
+            // Hotkey row — well click opens the capture dialog.
             Rectangle {
                 id: hotkeyRow
                 width: parent.width
@@ -264,28 +343,40 @@ Window {
                 }
             }
 
-            // ── Accent row (88px) — swatch strip + custom entry ──
+            // ── Section: Appearance ── (see the General heading for the label style)
+            Item { width: 1; height: Theme.settingsSectionGap - Theme.settingsRowGap * 2 }
+            Text {
+                text: "Appearance"
+                height: Theme.settingsSectionLabel
+                verticalAlignment: Text.AlignVCenter
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeSubtitle
+                font.weight: Theme.fontWeightSemibold
+                font.letterSpacing: 0.6
+                color: Theme.textSecondary
+            }
+
+            // Accent block — header line + swatch strip. The "Custom…" action
+            // now sits on the HEADER line at the row's right edge instead of
+            // butting against the end of the swatch strip, where it used to
+            // read as a tenth swatch. This is the same header+action pattern
+            // the Files section uses for "Add folder…".
             Rectangle {
                 id: accentRow
                 width: parent.width
                 height: Theme.settingsRowAccent
                 color: "transparent"
-                // 1px hairline separator from the row above (UI-SPEC hairlines).
-                Rectangle {
+
+                Item {
+                    id: accentHeader
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    height: 1
-                    color: Theme.separator
-                }
-
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.spaceSm
+                    height: Theme.settingsAccentHeader
 
                     Text {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
                         text: "Accent color"
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeTitle
@@ -293,95 +384,88 @@ Window {
                         color: Theme.textPrimary
                     }
 
-                    Row {
-                        spacing: Theme.spaceLg   // 16px gap before "Custom…" (UI-SPEC layout)
-
-                        // Swatch strip — 9 tokens from Theme.accentSwatches
-                        // (D-05/D-08), 28px ring footprint each.
-                        Row {
-                            id: swatchStrip
-                            spacing: Theme.swatchGap
-                            activeFocusOnTab: true
-                            Keys.onLeftPressed: (event) => { root.moveSwatch(-1); event.accepted = true }
-                            Keys.onRightPressed: (event) => { root.moveSwatch(+1); event.accepted = true }
-                            Keys.onReturnPressed: (event) => { root.commitSwatch(); event.accepted = true }
-                            Keys.onEnterPressed: (event) => { root.commitSwatch(); event.accepted = true }
-                            Keys.onSpacePressed: (event) => { root.commitSwatch(); event.accepted = true }
-                            onActiveFocusChanged: if (!activeFocus) keyboardSwatch = -1
-                            Repeater {
-                                model: Theme.accentSwatches.length
-                                Item {
-                                    width: Theme.swatchRingSize
-                                    height: Theme.swatchRingSize
-                                    // Selection ring — 2px accentLight band
-                                    // (UI-SPEC accent reserved-for list,
-                                    // selection family). Snaps, never
-                                    // animates (Animation contract).
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: Theme.swatchRadius + Theme.ringWidth
-                                        color: "transparent"
-                                        border.color: Theme.accentLight
-                                        border.width: Theme.ringWidth
-                                        visible: root.ringIndex === index
-                                    }
-                                    Rectangle {
-                                        anchors.centerIn: parent
-                                        width: Theme.swatchSize
-                                        height: Theme.swatchSize
-                                        radius: Theme.swatchRadius
-                                        color: Theme.accentSwatches[index]
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            onClicked: root.applySwatch(index)
-                                        }
-                                    }
-                                }
-                            }
+                    // "Custom…" — pinned right, matching "Add folder…".
+                    Item {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: customText.implicitWidth
+                        height: Theme.swatchRingSize
+                        activeFocusOnTab: true
+                        Keys.onReturnPressed: (event) => { root.openColorDialog(); event.accepted = true }
+                        Keys.onEnterPressed: (event) => { root.openColorDialog(); event.accepted = true }
+                        Keys.onSpacePressed: (event) => { root.openColorDialog(); event.accepted = true }
+                        Text {
+                            id: customText
+                            anchors.centerIn: parent
+                            text: "Custom…"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightRegular
+                            // Hover: textSecondary -> textPrimary; never accent.
+                            color: customHover.containsMouse || parent.activeFocus ? Theme.textPrimary : Theme.textSecondary
                         }
+                        MouseArea {
+                            id: customHover
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: root.openColorDialog()
+                        }
+                    }
+                }
 
-                        // "Custom…" text button (opens the staged dialog, D-07).
+                // Swatch strip — 9 tokens from Theme.accentSwatches (D-05/D-08),
+                // on its own line under the header.
+                Row {
+                    id: swatchStrip
+                    anchors.top: accentHeader.bottom
+                    anchors.topMargin: Theme.settingsAccentGap
+                    anchors.left: parent.left
+                    spacing: Theme.swatchGap
+                    activeFocusOnTab: true
+                    Keys.onLeftPressed: (event) => { root.moveSwatch(-1); event.accepted = true }
+                    Keys.onRightPressed: (event) => { root.moveSwatch(+1); event.accepted = true }
+                    Keys.onReturnPressed: (event) => { root.commitSwatch(); event.accepted = true }
+                    Keys.onEnterPressed: (event) => { root.commitSwatch(); event.accepted = true }
+                    Keys.onSpacePressed: (event) => { root.commitSwatch(); event.accepted = true }
+                    onActiveFocusChanged: if (!activeFocus) keyboardSwatch = -1
+                    Repeater {
+                        model: Theme.accentSwatches.length
                         Item {
-                            width: customText.implicitWidth
+                            width: Theme.swatchRingSize
                             height: Theme.swatchRingSize
-                            activeFocusOnTab: true
-                            Keys.onReturnPressed: (event) => { root.openColorDialog(); event.accepted = true }
-                            Keys.onEnterPressed: (event) => { root.openColorDialog(); event.accepted = true }
-                            Keys.onSpacePressed: (event) => { root.openColorDialog(); event.accepted = true }
-                            Text {
-                                id: customText
-                                anchors.centerIn: parent
-                                text: "Custom…"
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSizeSubtitle
-                                font.weight: Theme.fontWeightRegular
-                                // Hover: textSecondary → textPrimary; never accent.
-                                color: customHover.containsMouse || parent.activeFocus ? Theme.textPrimary : Theme.textSecondary
-                            }
-                            MouseArea {
-                                id: customHover
+                            // Selection ring — 2px accentLight band (UI-SPEC
+                            // accent reserved-for list, selection family).
+                            // Snaps, never animates (Animation contract).
+                            Rectangle {
                                 anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: root.openColorDialog()
+                                radius: Theme.swatchRadius + Theme.ringWidth
+                                color: "transparent"
+                                border.color: Theme.accentLight
+                                border.width: Theme.ringWidth
+                                visible: root.ringIndex === index
+                            }
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: Theme.swatchSize
+                                height: Theme.swatchSize
+                                radius: Theme.swatchRadius
+                                color: Theme.accentSwatches[index]
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: root.applySwatch(index)
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // ── Autostart row (64px) — toggle ──
+            // ── Autostart row — toggle ──
             Rectangle {
                 id: autostartRow
                 width: parent.width
                 height: Theme.settingsRowAutostart
                 color: "transparent"
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 1
-                    color: Theme.separator
-                }
 
                 Column {
                     anchors.left: parent.left
@@ -434,24 +518,35 @@ Window {
                 }
             }
 
-            // ── Scan locations row (188px, 07-05 D-10) — roots list with
-            // add/remove (native picker), ± interval selector, Scan now, and
-            // the last-scan summary. Text always sits LEFT, every button
-            // RIGHT (Add folder…, Remove, −/+, Scan now). All values flow
-            // through the injected settingsController; the surface never
-            // parses the INI.
+            // ── Section: Files ──
+            Item { width: 1; height: Theme.settingsSectionGap - Theme.settingsRowGap * 2 }
+            Text {
+                text: "Files"
+                height: Theme.settingsSectionLabel
+                verticalAlignment: Text.AlignVCenter
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeSubtitle
+                font.weight: Theme.fontWeightSemibold
+                font.letterSpacing: 0.6
+                color: Theme.textSecondary
+            }
+
+            // Scan locations block — roots list with add/remove (native
+            // picker), interval selector, and Scan now. The action sits on the
+            // header line at the right edge; text always LEFT (add/remove, the
+            // interval selector, Scan now). All values flow through the
+            // injected settingsController; the surface never parses the INI.
             Rectangle {
                 id: scanRow
+                objectName: "settingsScanBlock"
                 width: parent.width
-                height: Theme.settingsRowScan
+                // base + the folders area. Floored at the 72px the base window
+                // already carries, so an empty or short list leaves the block
+                // (and the 813px window) exactly as it was — only a list that
+                // outgrows that budget grows the window (root.foldersExtra).
+                height: Theme.settingsRowScanBase
+                        + Math.max(foldersArea.height, Theme.settingsRowScanFolders)
                 color: "transparent"
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 1
-                    color: Theme.separator
-                }
 
                 // Section header on TOP (Accent-color pattern) — never
                 // vertically centered beside the controls (floating-label
@@ -515,106 +610,151 @@ Window {
                     }
                 }
 
-                // Controls — full width, stacked under the header with a 12px
-                // breathing gap so the roots never sit mushed against the
-                // subtitle (roots 72 + 4 + interval 28 + 4 + action 28 = 136
-                // within the 188-row minus the 32px header, 12px gap and 8px
-                // bottom pad).
+                // Controls — full width, stacked under the header with a 10px
+                // breathing gap so the folders never sit mushed against the
+                // subtitle (base 110 = header 32 + gap 10 + 6 + interval 28 +
+                // 6 + action 28, plus the measured folders area below).
                 Column {
                     anchors.top: parent.top
-                    anchors.topMargin: Theme.settingsSectionHeader + Theme.spaceMd
+                    anchors.topMargin: Theme.settingsSectionHeader + Theme.settingsScanGap
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: Theme.spaceSm
-                    spacing: Theme.spaceXs
+                    spacing: Theme.settingsScanRowGap
 
-                    // Empty placeholder — shown only when no roots yet.
-                    Text {
+                    // Folders area (2026-10-08) — one slot in this Column,
+                    // whichever of the two it currently holds:
+                    //   - "No folders yet" when the list is empty, or
+                    //   - wrapping removable chips, one per scanned folder.
+                    //
+                    // It was a ScrollView capped at two 36px rows, so a third
+                    // folder was only reachable by scrolling inside the list.
+                    // Flow wraps instead: every folder is on screen at once, the
+                    // block grows with the chip rows, and the window follows
+                    // (root.foldersExtra). Nothing here scrolls.
+                    //
+                    // One Item wrapping both states, not two Column children:
+                    // a Column still lays out an invisible child, so a separate
+                    // placeholder Text would leave a phantom 28px row (plus its
+                    // 6px gap) behind the chips. Its measured height is what
+                    // drives the block and window heights, so it must be exact.
+                    Item {
+                        id: foldersArea
+                        // objectName mirrors the id so tests can locate it
+                        // (findChild resolves objectName, not a QML id) —
+                        // settingsFoldersFillTheBlock_20261008 measures it.
+                        objectName: "settingsFoldersArea"
                         width: parent.width
-                        height: Theme.settingsRowScanItem
-                        verticalAlignment: Text.AlignVCenter
-                        text: "No folders yet"
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeSubtitle
-                        font.weight: Theme.fontWeightRegular
-                        color: Theme.textSecondary
-                        visible: !(settingsController && settingsController.scanRoots.length > 0)
-                    }
+                        height: Math.max(chipsFlow.implicitHeight,
+                                         foldersEmpty.visible ? foldersEmpty.height : 0)
 
-                    // Root list — height-capped (research Pitfall 3: no
-                    // full-height ListView), token-driven height.
-                    ScrollView {
-                        width: parent.width
-                        height: (settingsController && settingsController.scanRoots.length > 0)
-                               ? Math.min(settingsController.scanRoots.length, 2) * Theme.settingsRowScanRoot
-                               : 0
-                        clip: true
-                        contentWidth: width
-                        visible: settingsController && settingsController.scanRoots.length > 0
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                        Column {
+                        Text {
+                            id: foldersEmpty
                             width: parent.width
+                            height: Theme.settingsRowScanItem
+                            verticalAlignment: Text.AlignVCenter
+                            text: "No folders yet"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSubtitle
+                            font.weight: Theme.fontWeightRegular
+                            color: Theme.textSecondary
+                            visible: chipsFlow.count === 0
+                        }
+
+                        // Flow gives implicitHeight for free — a Positioner
+                        // reports the bounding box of its laid-out children, and
+                        // wrapped rows extend that box downward. The block's
+                        // height binding above depends on it being exact, which
+                        // settingsFoldersFillTheBlock_20261008 asserts.
+                        Flow {
+                            id: chipsFlow
+                            objectName: "settingsFolderChips"
+                            width: parent.width
+                            spacing: Theme.settingsChipGap
+                            // Same idiom as the rest of the surface: ask the
+                            // controller's list, not Positioner.count, which is
+                            // not in scope here (it warned "count is not
+                            // defined" and left the Flow permanently visible).
+                            visible: settingsController && settingsController.scanRoots.length > 0
+
                             Repeater {
                                 model: settingsController ? settingsController.scanRoots : []
-                                Rectangle {
-                                    width: parent.width
-                                    height: Theme.settingsRowScanRoot
-                                    color: "transparent"
-                                    // Hairline separator under every entry but
-                                    // the last (consistency with the rest of
-                                    // the window) — the 36px row leaves 6px
-                                    // between the Remove button and the line.
-                                    Rectangle {
-                                        anchors.bottom: parent.bottom
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        height: 1
-                                        color: Theme.separator
-                                        visible: index < (settingsController ? settingsController.scanRoots.length : 0) - 1
-                                    }
+                                delegate: Rectangle {
+                                    id: chip
+                                    objectName: "settingsFolderChip"
+                                    height: Theme.settingsChipHeight
+                                    // Label elides past settingsChipMaxTextW so one
+                                    // long folder name can't eat a whole row; the
+                                    // full path is one hover away (ToolTip below).
+                                    width: Theme.settingsChipPadH * 2 + chipLabel.width
+                                           + Theme.spaceSm + chipClose.implicitWidth
+                                    radius: Theme.fieldRadius
+                                    color: chipHover.containsMouse ? Theme.hoverBg : Theme.surfaceSecondary
+                                    border.width: 1
+                                    border.color: Theme.border
+
                                     Text {
+                                        id: chipLabel
                                         anchors.left: parent.left
+                                        anchors.leftMargin: Theme.settingsChipPadH
                                         anchors.verticalCenter: parent.verticalCenter
-                                        width: parent.width - 64
+                                        width: Math.min(implicitWidth, Theme.settingsChipMaxTextW)
                                         elide: Text.ElideMiddle
-                                        text: modelData
+                                        // Basename, not the full path — the chip
+                                        // stays compact and readable; the tooltip
+                                        // carries the path for disambiguation.
+                                        text: chipFolderName(modelData)
                                         font.family: Theme.fontFamily
                                         font.pixelSize: Theme.fontSizeSubtitle
                                         font.weight: Theme.fontWeightRegular
                                         color: Theme.textSecondary
                                     }
-                                    // Remove — a real button now (stepper-chip
-                                    // family): bordered well, hover fill,
-                                    // danger-red text on hover so it reads as
-                                    // destructive, not a dim label.
-                                    Rectangle {
+
+                                    // The × is the ONLY destructive target. Dropping a
+                                    // scanned folder is not something a stray click
+                                    // on the label should do, so the hit areas are
+                                    // split: hover-only on the label, click on the ×.
+                                    MouseArea {
+                                        id: chipHover
+                                        anchors.left: parent.left
+                                        anchors.right: chipClose.left
+                                        anchors.rightMargin: Theme.spaceSm
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        hoverEnabled: true
+                                    }
+
+                                    Text {
+                                        id: chipClose
                                         anchors.right: parent.right
+                                        anchors.rightMargin: Theme.settingsChipPadH
                                         anchors.verticalCenter: parent.verticalCenter
-                                        width: removeLabel.implicitWidth + Theme.spaceLg
-                                        height: 24
-                                        radius: Theme.fieldRadius
-                                        color: removeHover.containsMouse ? Theme.hoverBg : "transparent"
-                                        border.width: 1
-                                        border.color: removeHover.containsMouse ? Theme.dangerBorder : Theme.border
-                                        Text {
-                                            id: removeLabel
-                                            anchors.centerIn: parent
-                                            text: "Remove"
-                                            font.family: Theme.fontFamily
-                                            font.pixelSize: Theme.fontSizeSubtitle
-                                            font.weight: Theme.fontWeightSemibold
-                                            color: removeHover.containsMouse ? Theme.dangerText : Theme.textSecondary
+                                        text: "×"   // U+00D7 — present in every UI font
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.fontSizeSubtitle
+                                        font.weight: Theme.fontWeightRegular
+                                        color: chipCloseHover.containsMouse ? Theme.dangerText : Theme.textSecondary
+                                    }
+
+                                    MouseArea {
+                                        id: chipCloseHover
+                                        anchors.fill: chipClose
+                                        hoverEnabled: true
+                                        onClicked: {
+                                            if (settingsController)
+                                                settingsController.removeScanRoot(index)
                                         }
-                                        MouseArea {
-                                            id: removeHover
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            onClicked: {
-                                                if (settingsController)
-                                                    settingsController.removeScanRoot(index)
-                                            }
-                                        }
+                                    }
+
+                                    // Hover the label for the full path — two folders
+                                    // can share a basename ("Netch"), and the chip
+                                    // alone can't say which is which. No anchors:
+                                    // ToolTip is a Popup, not an Item, so it places
+                                    // itself over its parent item.
+                                    ToolTip {
+                                        visible: chipHover.containsMouse
+                                        delay: 400
+                                        text: modelData
                                     }
                                 }
                             }
@@ -765,15 +905,25 @@ Window {
                     // only while a scan is in flight (settingsController.scanning).
                     // A moving appOutline chunk sweeps the surfaceSecondary
                     // track; the honest "no fake %" choice for a recursive walk
-                    // where the total dir count isn't known upfront. Overlays
-                    // the section bottom (never participates in the centered
-                    // layout, so the fixed 188px budget stays put).
+                    // where the total dir count isn't known upfront.
+                    //
+                    // It never participates in the centered layout, so the
+                    // settingsRowScan budget stays put — but it sits in the
+                    // inter-section gap BELOW the block, not inside it.
+                    // 2026-10-08: the budget (32+10+72+6+28+6+28 = 182) ends
+                    // flush with the action row's bottom edge, so any
+                    // bottomMargin inside the block lands the bar on top of the
+                    // "Last scan …" summary and the "Scan now" button — reported
+                    // as an overlap. The 8px settingsRowGap below the block has
+                    // room for the 4px track; the negative margin centres it in
+                    // that gap, so nothing has to move and no token changes.
                     Item {
                         id: scanBar
+                        objectName: "settingsScanBar"
                         anchors.right: parent.right
                         anchors.rightMargin: Theme.spaceMd
                         anchors.bottom: parent.bottom
-                        anchors.bottomMargin: Theme.spaceSm
+                        anchors.bottomMargin: -(Theme.settingsRowGap - Theme.scanBarHeight / 2)
                         width: 260
                         height: Theme.scanBarHeight
                         visible: settingsController && settingsController.scanning
@@ -788,7 +938,12 @@ Window {
                             height: scanBar.height
                             color: Theme.appOutline
                             radius: Theme.scanBarRadius
-                            x: scanChunkAnim.value
+                            // `value` is undefined until the animation first runs,
+                            // which warned "Unable to assign [undefined] to x" on
+                            // every settings open. Rest off-screen left, which is
+                            // where the animation starts anyway.
+                            x: scanChunkAnim.value !== undefined ? scanChunkAnim.value
+                                                                  : -scanBar.width
                             SequentialAnimation on x {
                                 id: scanChunkAnim
                                 running: scanChunk.visible
@@ -810,61 +965,53 @@ Window {
             // (toggle, Check for updates, Download now). All values flow
             // through the injected settingsController; failures are text
             // here, never popups.
+            // ── Section: Updates ──
+            Item { width: 1; height: Theme.settingsSectionGap - Theme.settingsRowGap * 2 }
+            Text {
+                text: "Updates"
+                height: Theme.settingsSectionLabel
+                verticalAlignment: Text.AlignVCenter
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeSubtitle
+                font.weight: Theme.fontWeightSemibold
+                font.letterSpacing: 0.6
+                color: Theme.textSecondary
+            }
+
+            // Updates block — auto-install toggle, manual Check button, inline
+            // status (D-03/D-10). Text always sits LEFT, every button RIGHT
+            // (toggle, Check for updates, Download now). All values flow
+            // through the injected settingsController; failures are text
+            // here, never popups. The "Updates / Keep wisp current" header
+            // this block used to carry is now the section heading above it, so
+            // the subtitle moved onto the toggle row.
             Rectangle {
                 id: updatesRow
                 width: parent.width
                 height: Theme.settingsRowUpdates
                 color: "transparent"
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 1
-                    color: Theme.separator
-                }
 
-                // Section header on TOP — matches the scan-locations header
-                // (32px: title + subtitle).
+                // Controls — full width. The block no longer reserves room for its own
+                // header (that is the section heading now), so the toggle row
+                // starts at the top edge: toggle row(48) + gap(10) + status
+                // row(34) = 92, the settingsRowUpdates budget. The gap is
+                // larger than the in-section row gap because the status line
+                // is the result of the toggle, not another peer row — it needs
+                // to read as belonging to it, but not be glued to it.
                 Column {
                     anchors.top: parent.top
-                    anchors.topMargin: Theme.spaceSm
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    spacing: 2
-                    Text {
-                        text: "Updates"
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeTitle
-                        font.weight: Theme.fontWeightRegular
-                        color: Theme.textPrimary
-                    }
-                    Text {
-                        text: "Keep wisp current"
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeSubtitle
-                        font.weight: Theme.fontWeightRegular
-                        color: Theme.textSecondary
-                    }
-                }
-
-                // Controls — full width, stacked under the header
-                // (auto-toggle 28 + 4 + check 40 + 4 + download bar 0..6 =
-                // 76..82 within the 132-row minus the 32px header, 8px gap
-                // and 8px bottom pad).
-                Column {
-                    anchors.top: parent.top
-                    anchors.topMargin: Theme.settingsSectionHeader + Theme.spaceSm
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: Theme.spaceSm
-                    spacing: Theme.spaceXs
+                    spacing: Theme.settingsUpdatesGap
 
                     // Auto-install toggle row — track fills accent when on;
                     // sub-line states the zero-interaction contract (D-05).
+                    // Height is settingsRowSingle so it matches every other
+                    // label+sub+control row in the surface.
                     Row {
                         width: parent.width
-                        height: Theme.settingsRowScanItem
+                        height: Theme.settingsRowSingle
                         spacing: Theme.spaceSm
                         Column {
                             width: parent.width - Theme.toggleWidth - Theme.spaceSm
@@ -872,7 +1019,7 @@ Window {
                             Text {
                                 text: "Install updates automatically"
                                 font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSizeSubtitle
+                                font.pixelSize: Theme.fontSizeTitle
                                 font.weight: Theme.fontWeightSemibold
                                 color: Theme.textPrimary
                             }
@@ -1046,21 +1193,26 @@ Window {
                 }
             }
 
-            // ── Show shortcuts row (64px, Phase 12) — opens the themed
-            // ShortcutsWindow reference. Left: label+sub; right: accent
-            // button (scan-now/check-button family).
+            // ── Section: Reference ──
+            Item { width: 1; height: Theme.settingsSectionGap - Theme.settingsRowGap * 2 }
+            Text {
+                text: "Reference"
+                height: Theme.settingsSectionLabel
+                verticalAlignment: Text.AlignVCenter
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeSubtitle
+                font.weight: Theme.fontWeightSemibold
+                font.letterSpacing: 0.6
+                color: Theme.textSecondary
+            }
+
+            // Shortcuts row — opens the themed ShortcutsWindow. Left:
+            // label+sub; right: accent button (scan-now/check-button family).
             Rectangle {
                 id: shortcutsRow
                 width: parent.width
                 height: Theme.settingsRowShortcuts
                 color: "transparent"
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 1
-                    color: Theme.separator
-                }
 
                 Column {
                     anchors.left: parent.left

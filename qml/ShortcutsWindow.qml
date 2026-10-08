@@ -16,8 +16,13 @@ Window {
     id: root
     title: "wisp — keyboard shortcuts"
     flags: Qt.Tool | Qt.FramelessWindowHint
-    width: Theme.shortcutsWindowWidth
-    height: Theme.shortcutsWindowHeight
+    // 2026-09-15 (screen-fit): same scale-to-fit contract as SettingsWindow —
+    // 11 shortcut rows make this the other tall surface, and it clipped off
+    // the top of a 768-high screen the same way.
+    readonly property real uiScale: Theme.fitScale(Theme.shortcutsWindowWidth,
+                                                  Theme.shortcutsWindowHeight)
+    width: Math.round(Theme.shortcutsWindowWidth * uiScale)
+    height: Math.round(Theme.shortcutsWindowHeight * uiScale)
     color: "transparent"
     visible: false   // the controller shows it (SettingsWindow::openShortcuts)
 
@@ -49,14 +54,30 @@ Window {
         root.close()
     }
 
-    Component.onCompleted: {
-        x = Screen.availableX + Math.round((Screen.availableWidth - width) / 2)
-        y = Screen.availableY + Math.round((Screen.availableHeight - height) / 2)
+    function centerOnScreen() {
+        const aw = Screen.availableWidth
+        const ah = Screen.availableHeight
+        if (!isFinite(aw) || !isFinite(ah))
+            return   // no screen yet — the onUiScaleChanged pass re-runs this
+        x = Screen.availableX + Math.round((aw - width) / 2)
+        y = Screen.availableY + Math.round((ah - height) / 2)
     }
+    Component.onCompleted: centerOnScreen()
+    // 2026-09-15: the surface resizes once Screen becomes available (uiScale
+    // settles from 1 to its real value); re-center then so it isn't left
+    // offset by the height delta.
+    onUiScaleChanged: centerOnScreen()
 
-    // Static pre-rendered shadow — same shell as SettingsWindow.
+    // Static pre-rendered shadow — same shell as SettingsWindow. Explicit
+    // natural size + TopLeft origin so it tracks the surface under the
+    // screen-fit scale (anchors.fill would measure the scaled window).
     Image {
-        anchors.fill: parent
+        x: 0
+        y: 0
+        width: Theme.shortcutsWindowWidth
+        height: Theme.shortcutsWindowHeight
+        scale: root.uiScale
+        transformOrigin: Item.TopLeft
         source: "assets/shadow.png"
         opacity: Theme.shadowOpacity
     }
@@ -64,9 +85,12 @@ Window {
     // The surface (528x548 + 2x16 shadow margin inside the 560x580 window).
     Rectangle {
         id: surface
-        anchors.centerIn: parent
+        x: (Theme.shortcutsWindowWidth - Theme.shortcutsSurfaceWidth) / 2
+        y: (Theme.shortcutsWindowHeight - Theme.shortcutsSurfaceHeight) / 2
         width: Theme.shortcutsSurfaceWidth
         height: Theme.shortcutsSurfaceHeight
+        scale: root.uiScale
+        transformOrigin: Item.TopLeft
         radius: Theme.radiusSurface
         color: Theme.surface
         border.color: Theme.border

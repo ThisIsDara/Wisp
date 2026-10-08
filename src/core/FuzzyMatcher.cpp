@@ -135,4 +135,111 @@ Result score(const QString &query, const QString &displayName)
     return r;
 }
 
+void buildCaches(const QString &displayName, QString *outLower,
+                 QVector<char> *outBoundaries)
+{
+    *outLower = displayName.toLower();
+    const QString &lower = *outLower;
+    outBoundaries->resize(lower.size());
+    // Boundary flags read from the ORIGINAL casing, not the lowercased copy —
+    // camelCase detection needs the uppercase that toLower() erased.
+    for (int i = 0; i < lower.size(); ++i)
+        (*outBoundaries)[i] = isBoundaryAt(displayName, i) ? 1 : 0;
+}
+
+Result scoreFast(const QString &queryLower, const QString &targetLower,
+                 const QVector<char> &boundaries)
+{
+    // 2026-09-15: cache-driven twin of score(). Same ladder, same tiers, same
+    // bonus formula — the only difference is that the lowercase text and the
+    // boundary flags were computed once per entry (buildCaches) instead of per
+    // keystroke. Comparison is a direct QChar compare because both sides are
+    // already folded to the same case.
+    //
+    // Parity contract: this must stay byte-identical to score(queryLower,
+    // displayName) for every input. tst_matcher asserts that equivalence.
+    Result none;
+    const int qLen = queryLower.size();
+    const int nLen = targetLower.size();
+    if (qLen == 0 || qLen > nLen)
+        return none;
+
+    bool startsWith = true;
+    for (int i = 0; i < qLen; ++i) {
+        if (queryLower.at(i) != targetLower.at(i)) {
+            startsWith = false;
+            break;
+        }
+    }
+    if (startsWith) {
+        int hits = 0;
+        for (int i = 0; i < qLen; ++i)
+            if (boundaries.at(i))
+                ++hits;
+        Result r;
+        r.score = (qLen == nLen ? kTierExact : kTierPrefix)
+                  + clampBonus(qLen * kPerCharBonus + hits * kPerBoundaryBonus + kSingleRunBonus);
+        r.ranges = { { 0, qLen } };
+        return r;
+    }
+
+    int first = -1;
+    for (int j = 0; j < nLen; ++j) {
+        if (queryLower.at(0) == targetLower.at(j) && boundaries.at(j)) {
+            first = j;
+            break;
+        }
+    }
+    if (first < 0) {
+        for (int j = 0; j < nLen; ++j) {
+            if (queryLower.at(0) == targetLower.at(j)) {
+                first = j;
+                break;
+            }
+        }
+    }
+    if (first < 0)
+        return none;
+
+    QVector<int> positions;
+    positions.reserve(qLen);
+    positions.append(first);
+    int prev = first;
+    for (int i = 1; i < qLen; ++i) {
+        int j = prev + 1;
+        while (j < nLen && queryLower.at(i) != targetLower.at(j))
+            ++j;
+        if (j >= nLen)
+            return none;
+        positions.append(j);
+        prev = j;
+    }
+
+    Result r;
+    int hits = 0;
+    for (int pos : positions)
+        if (boundaries.at(pos))
+            ++hits;
+
+    int runStart = positions.first();
+    int runEnd = runStart;
+    int runs = 1;
+    for (int i = 1; i < positions.size(); ++i) {
+        if (positions.at(i) == runEnd + 1) {
+            runEnd = positions.at(i);
+            continue;
+        }
+        r.ranges.append({ runStart, runEnd - runStart + 1 });
+        runStart = positions.at(i);
+        runEnd = runStart;
+        ++runs;
+    }
+    r.ranges.append({ runStart, runEnd - runStart + 1 });
+
+    const int tier = boundaries.at(positions.first()) ? kTierBoundary : kTierSubsequence;
+    r.score = tier + clampBonus(positions.size() * kPerCharBonus + hits * kPerBoundaryBonus
+                                + (runs == 1 ? kSingleRunBonus : 0));
+    return r;
+}
+
 } // namespace FuzzyMatcher

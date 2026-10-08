@@ -18,6 +18,28 @@ QSettings makeSettings(const QString &settingsPath)
     return QSettings(settingsPath, QSettings::IniFormat);
 }
 
+// 2026-10-08: a root is only accepted if it names a real filesystem location.
+// QDir::isAbsolutePath() is NOT sufficient: it returns true for a DRIVE-RELATIVE
+// path like "C:sersrickppData..." (drive + anything), which is exactly what a
+// mis-encoded INI produces — every backslash swallowed by the reader's escape
+// handling, leaving a drive letter glued to the rest of the path. Requiring a
+// separator after the drive colon rejects that, while still allowing a bare
+// drive root ("D:"), which is a legitimate scan target.
+bool isScannableRootPath(const QString &path)
+{
+    if (path.isEmpty())
+        return false;
+    const QChar first = path.at(0);
+    if (first == QLatin1Char('/') || first == QLatin1Char('\\'))
+        return true;   // rooted — UNC, or absolute on the current drive
+    if (path.size() == 2 && path.at(1) == QLatin1Char(':'))
+        return true;   // bare drive root, e.g. "D:"
+    if (path.size() >= 3 && path.at(1) == QLatin1Char(':')
+        && (path.at(2) == QLatin1Char('\\') || path.at(2) == QLatin1Char('/')))
+        return true;   // drive + absolute path
+    return false;
+}
+
 } // namespace
 
 SettingsStore::SettingsStore(const QString &settingsPath, QObject *parent)
@@ -59,7 +81,26 @@ QStringList SettingsStore::scanRoots() const
 {
     // 07-04 D-01: live read — an external edit / 07-05 Settings write is
     // picked up on the next ScanService snapshot (Pitfall 4 discipline).
-    return m_settings.value(QStringLiteral("scan/roots"), QStringList()).toStringList();
+    //
+    // 2026-10-08: a corrupt value used to become a PHANTOM ROOT. The live INI
+    // carried the literal `roots=@Invalid()` — QSettings' marker for a value it
+    // could not serialize — and toStringList() on a QString yields a one-element
+    // list, so the app gained a "root" literally named "@Invalid()" and scanned a
+    // directory that does not exist. Every entry is now required to be an
+    // absolute path, so a garbage value degrades to "no roots" (the D-09 no-locations
+    // state the UI already handles) instead of a broken one.
+    const QVariant raw = m_settings.value(QStringLiteral("scan/roots"));
+    QStringList roots = raw.toStringList();
+    QStringList sane;
+    sane.reserve(roots.size());
+    for (const QString &root : std::as_const(roots)) {
+        const QString norm = QDir::toNativeSeparators(root).trimmed();
+        if (norm.isEmpty() || !isScannableRootPath(norm))
+            continue;
+        if (!sane.contains(norm))
+            sane.append(norm);
+    }
+    return sane;
 }
 
 int SettingsStore::scanIntervalMinutes() const

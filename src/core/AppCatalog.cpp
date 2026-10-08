@@ -32,10 +32,15 @@ QVector<AppEntry> dedupeLnkOverUwp(QVector<AppEntry> raw)
         }
     }
     for (const AppEntry &e : raw) {
-        if (e.source == AppEntry::Source::Uwp
-            && !taken.contains(e.displayName.toCaseFolded())) {
-            taken.insert(e.displayName.toCaseFolded(), out.size());
-            out.push_back(e);
+        if (e.source == AppEntry::Source::Uwp) {
+            // 2026-09-15 perf: fold once — the probe and the insert each built
+            // their own copy, so a UWP-heavy catalog paid two case folds per
+            // candidate row on every catalog refresh.
+            const QString folded = e.displayName.toCaseFolded();
+            if (!taken.contains(folded)) {
+                taken.insert(folded, out.size());
+                out.push_back(e);
+            }
         }
     }
     // 05.1 CUR-04: File rows pass through untouched — D-10 collision logic is
@@ -53,9 +58,23 @@ QVector<AppEntry> dedupeLnkOverUwp(QVector<AppEntry> raw)
 // uses, so the catalog → model pipeline sorts consistently at both layers.
 void sortAlphabetical(QVector<AppEntry> &entries)
 {
-    std::sort(entries.begin(), entries.end(), [](const AppEntry &a, const AppEntry &b) {
-        return a.displayName.toCaseFolded() < b.displayName.toCaseFolded();
-    });
+    // 2026-09-15 perf: index-sort against precomputed fold keys. The comparator
+    // folded BOTH names on every comparison (~2·N·log2N allocations for a
+    // ~1000-entry catalog, on every refresh); this folds each name once. Same
+    // comparator, same resulting order.
+    QVector<QString> keys(entries.size());
+    QVector<int> byKey(entries.size());
+    for (int i = 0; i < entries.size(); ++i) {
+        keys[i] = entries.at(i).displayName.toCaseFolded();
+        byKey[i] = i;
+    }
+    std::sort(byKey.begin(), byKey.end(),
+              [&keys](int a, int b) { return keys.at(a) < keys.at(b); });
+    QVector<AppEntry> sorted;
+    sorted.reserve(entries.size());
+    for (int i : byKey)
+        sorted.append(std::move(entries.at(i)));
+    entries = std::move(sorted);
 }
 
 // 05.1 marking (CUR-01/CUR-02/CUR-04): NEVER removes entries — hidden
