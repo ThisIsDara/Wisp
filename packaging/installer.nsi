@@ -16,7 +16,10 @@ Caption "wisp — app launcher"
 ; --- version metadata (SignPath artifact policy: product name/version) --
 ; BUMP IN LOCKSTEP with CMakeLists project(VERSION ...) every release -
 ; the updater compares WISP_VERSION against the release tag (Phase 8 D-15).
-VIProductVersion "0.1.9.1"   // NSIS allows at most 4 dot-separated fields
+; NSIS comments start with ';' or '#' — a '//' here is parsed as part of the
+; value and aborts the build (it did, on v0.1.9.1's first CI run).
+; VIProductVersion takes at most 4 dot-separated fields.
+VIProductVersion "0.1.9.1"
 VIAddVersionKey "ProductName" "wisp"
 VIAddVersionKey "FileDescription" "wisp — app launcher"
 VIAddVersionKey "FileVersion" "0.1.9.1"
