@@ -42,6 +42,22 @@ private slots:
         QCOMPARE(US::compareVersions(QStringLiteral("v0.2"), QStringLiteral("v0.2.0")), 0);
         // Uppercase V also stripped.
         QVERIFY(US::compareVersions(QStringLiteral("V0.2.0"), QStringLiteral("v0.1.9")) > 0);
+
+        // 2026-10-09 (v0.1.9.1): a four-component patch MUST order above its own
+        // three-component parent, or this urgent fix would never be offered to
+        // the users on v0.1.9 who are the ones stuck with the empty list. The
+        // zero-padding rule above covers it ([0,1,9,0] vs [0,1,9,1]), but that
+        // was only an accident of the implementation, not a stated contract —
+        // assert it, since the release itself depends on it.
+        bool v = false;
+        QVERIFY(US::compareVersions(QStringLiteral("v0.1.9"), QStringLiteral("v0.1.9.1"), &v) < 0);
+        QVERIFY(v);
+        QVERIFY(US::compareVersions(QStringLiteral("v0.1.9.1"), QStringLiteral("v0.1.9"), &v) > 0);
+        QVERIFY(v);
+        // Two four-component versions still separate, and the 4th component
+        // doesn't shadow the numeric (not lexicographic) ordering of the rest.
+        QVERIFY(US::compareVersions(QStringLiteral("v0.1.9.1"), QStringLiteral("v0.1.9.2")) < 0);
+        QVERIFY(US::compareVersions(QStringLiteral("v0.1.9.1"), QStringLiteral("v0.1.10")) < 0);
     }
 
     void compareVersions_rejectsGarbage()

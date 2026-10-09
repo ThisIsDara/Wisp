@@ -42,6 +42,7 @@ private slots:
     void failedListingMapsErrorState();
     void snapshotReadOnUiThread_Pitfall4();
     void startArmsTimerOnlyWithRoots();
+    void rejectedIndexScansOnceOnUpgrade_20261009();
     void refreshIntervalReadsFreshSnapshot();
 
 private:
@@ -403,6 +404,95 @@ void TstScan::startArmsTimerOnlyWithRoots()
         QCOMPARE(service.stateOrdinal(), int(ScanService::Idle)); // been Idle the whole time
         QCOMPARE(listCalls.load(), 0); // D-09: no boot scan
         QCOMPARE(spy.count(), 0);      // no spurious NOTIFY
+    }
+}
+
+// 2026-10-09 (user: "the new update doesnt show the items in the list ... unless
+// they click Scan now or wait for the scan timer"): D-09 boots with NO scan
+// because the persisted index is supposed to make relaunch instant. An
+// index-FORMAT bump (v3 → v4) makes that index unreadable, so the first launch
+// after an update had an empty index AND no scan — a blank list until the
+// interval tick. start(indexLoadOk) recovers with exactly one scan.
+//
+// The "exactly once" half matters as much as the fix: an unconditional
+// scan-at-boot would re-walk the disk on every single launch forever.
+void TstScan::rejectedIndexScansOnceOnUpgrade_20261009()
+{
+    const QString root = QStringLiteral("C:\\Root");
+    auto map = scanFixtureMap(root);
+
+    // (a) index REJECTED (the upgrade) + roots → one recovery scan, right now.
+    {
+        auto listFn = [&map](const QString &p) { return map.value(p); };
+        MutableSettingsHolder settings;
+        settings.roots = { root };
+
+        FileIndex index(m_indexPath);
+        ScanService service;
+        service.setIndex(&index);
+        service.setListFn(listFn);
+        service.setSettingsSource(
+            [&settings] { return ScanService::ScanSettings{ settings.roots, 10 }; });
+        service.setPool(&m_pool);
+
+        QSignalSpy spy(&service, &ScanService::scanStateChanged);
+        service.start(/*indexLoadOk=*/false);
+        QVERIFY(spy.wait(kWaitGenerous));
+        QVERIFY2(index.entryCount() > 0,
+                 "a rejected index must be rebuilt immediately, not left empty");
+    }
+
+    // (b) The NEXT launch loads that index fine → no scan at all. This is the
+    // "only once" guarantee: recovery is a consequence of the index being
+    // unusable, so a good index means a quiet boot again.
+    {
+        std::atomic<int> listCalls{ 0 };
+        auto listFn = [&map, &listCalls](const QString &p) {
+            listCalls.fetch_add(1);
+            return map.value(p);
+        };
+        MutableSettingsHolder settings;
+        settings.roots = { root };
+
+        FileIndex index(m_indexPath);
+        QVERIFY2(index.load(), "the index written by the recovery scan must reload");
+        ScanService service;
+        service.setIndex(&index);
+        service.setListFn(listFn);
+        service.setSettingsSource(
+            [&settings] { return ScanService::ScanSettings{ settings.roots, 10 }; });
+        service.setPool(&m_pool);
+
+        QSignalSpy spy(&service, &ScanService::scanStateChanged);
+        service.start(/*indexLoadOk=*/true);
+        QTest::qWait(150);
+        QCOMPARE(listCalls.load(), 0);  // a good index → quiet boot (D-09 restored)
+        QCOMPARE(spy.count(), 0);
+    }
+
+    // (c) Rejected index but NO roots → still no scan. A genuine first run (no
+    // index file yet, no folders picked) must not burn a walk; the D-09
+    // first-root flow owns that case.
+    {
+        std::atomic<int> listCalls{ 0 };
+        auto listFn = [&map, &listCalls](const QString &p) {
+            listCalls.fetch_add(1);
+            return map.value(p);
+        };
+        MutableSettingsHolder settings; // roots stay empty
+
+        FileIndex index(m_indexPath);
+        ScanService service;
+        service.setIndex(&index);
+        service.setListFn(listFn);
+        service.setSettingsSource(
+            [&settings] { return ScanService::ScanSettings{ settings.roots, 10 }; });
+        service.setPool(&m_pool);
+
+        service.start(/*indexLoadOk=*/false);
+        QTest::qWait(150);
+        QCOMPARE(listCalls.load(), 0);
+        QCOMPARE(service.stateOrdinal(), int(ScanService::NoRoots));
     }
 }
 

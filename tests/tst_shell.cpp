@@ -441,14 +441,29 @@ void ShellTest::settingsFoldersFillTheBlock_20261008()
 
     // The no-clip guarantee: every chip sits fully inside the folders area.
     // This is the assertion that would have failed on the old capped list.
+    //
+    // Positions MUST be mapped: a chip's parent is the Flow, not the area, so
+    // comparing chip->y() against area->y() compares two unrelated coordinate
+    // spaces (it passed by coincidence before — both were near 0).
     for (auto *chip : chips) {
-        const qreal bottom = chip->y() + chip->height();
-        QVERIFY2(chip->y() >= area->y() - 0.5
-                 && bottom <= area->y() + area->height() + 0.5,
-                 qPrintable(QStringLiteral("chip at y=%1 h=%2 escapes the folders area "
-                                           "(area y=%3 h=%4) — it would be clipped")
-                                .arg(chip->y()).arg(chip->height())
-                                .arg(area->y()).arg(area->height())));
+        const QPointF top = chip->mapToItem(area, QPointF(0, 0));
+        const QPointF bottom = chip->mapToItem(area, QPointF(0, chip->height()));
+        QVERIFY2(top.y() >= -0.5 && bottom.y() <= area->height() + 0.5,
+                 qPrintable(QStringLiteral("chip spans y=%1..%2 but the folders area is "
+                                           "0..%3 — it would be clipped")
+                                .arg(top.y()).arg(bottom.y()).arg(area->height())));
+    }
+
+    // 2026-10-09: the chips sat flush under the "Folders wisp searches…" subtitle
+    // and read as mushed against it. Theme.settingsChipPadTop (10) is folded
+    // INTO the area's height, so it costs the 813px window nothing. 8 is a
+    // floor below the declared 10, not a restatement of it — this only has to
+    // catch the padding being dropped back to 0.
+    {
+        const qreal topChip = chips.first()->mapToItem(area, QPointF(0, 0)).y();
+        QVERIFY2(topChip >= 8,
+                 qPrintable(QStringLiteral("chips need breathing room under the "
+                                           "subtitle (got %1px, want >=8)").arg(topChip)));
     }
 
     // The block is tall enough for what it holds (the Flow's implicitHeight is

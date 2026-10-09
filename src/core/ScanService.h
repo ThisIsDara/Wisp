@@ -59,8 +59,17 @@ public:
     void setIndex(FileIndex *index); // external ownership — must outlive the service
     void setPool(QThreadPool *pool); // dedicated pool; nullptr → global (tests inject)
 
-    void start();           // boot: read snapshot; arm timer iff roots exist; NO scan (D-09)
-    void requestScan();     // "Scan now" / roots-changed funnel — single-flight + coalesce
+    // Boot: read snapshot; arm timer iff roots exist. Normally NO scan (D-09) —
+    // the persisted index makes relaunch instant.
+    //
+    // `indexLoadOk` is FileIndex::load()'s result from before this call. When it
+    // is FALSE the persisted index was REJECTED, which is exactly what happens
+    // on the first launch after an index-format bump (an update): the index is
+    // empty, and with no scan the list stays blank until the interval tick or a
+    // manual "Scan now". start() then asks for exactly ONE scan. Defaults true,
+    // so every other caller keeps the no-scan boot path.
+    void start(bool indexLoadOk = true);
+    void requestScan();     // "Scan now" / roots-changed funnel - single-flight + coalesce
     void refreshInterval(); // re-arm the timer from a fresh snapshot (Settings interval selector)
 
     int stateOrdinal() const;

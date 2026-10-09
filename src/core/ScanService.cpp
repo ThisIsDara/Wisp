@@ -48,9 +48,9 @@ void ScanService::setPool(QThreadPool *pool)
     m_pool = pool;
 }
 
-void ScanService::start()
+void ScanService::start(bool indexLoadOk)
 {
-    // Boot: snapshot + arm only. NO scan (D-09) — relaunch is instant from
+    // Boot: snapshot + arm only. NO scan (D-09) - relaunch is instant from
     // the persisted index main.cpp loaded before calling start().
     const ScanSettings s = m_settingsSource ? m_settingsSource() : ScanSettings{};
     if (s.roots.isEmpty()) {
@@ -67,6 +67,24 @@ void ScanService::start()
         m_state = Idle;
         emit scanStateChanged();
     }
+
+    // 2026-10-09 (upgrade showed an empty list): D-09's "relaunch is instant
+    // from the persisted index" stops holding when that index was REJECTED —
+    // an index-format bump on update makes the old file unreadable, so the
+    // first launch after an update had an empty index AND no scan, and the
+    // list stayed blank until the interval tick (up to scanIntervalMinutes) or
+    // a manual "Scan now". Recover with exactly one scan, here, right now.
+    //
+    // "Exactly once" needs no bookkeeping and no persisted flag: this scan
+    // writes a CURRENT-format index, so the very next launch loads it (ok=1)
+    // and takes the no-scan path above. It is also gated on roots, so a genuine
+    // first run (no index file yet, no folders picked) still doesn't scan —
+    // that case belongs to the D-09 first-root flow. And because it goes
+    // through requestScan(), the single-flight gate means a timer tick or a
+    // manual "Scan now" landing in the same window coalesces into THIS scan
+    // instead of doubling the work.
+    if (!indexLoadOk)
+        requestScan();
 }
 
 void ScanService::requestScan()

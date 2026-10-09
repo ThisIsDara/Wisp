@@ -645,11 +645,19 @@ Window {
                         // settingsFoldersFillTheBlock_20261008 measures it.
                         objectName: "settingsFoldersArea"
                         width: parent.width
-                        height: Math.max(chipsFlow.implicitHeight,
-                                         foldersEmpty.visible ? foldersEmpty.height : 0)
+                        // The top pad is INSIDE the slot's height, so it pushes
+                        // the chips down off the subtitle AND feeds the block /
+                        // window height model below unchanged. Both states are
+                        // padded, so switching between empty and populated
+                        // doesn't jump.
+                        height: Theme.settingsChipPadTop
+                                + Math.max(chipsFlow.implicitHeight,
+                                           foldersEmpty.visible ? foldersEmpty.height : 0)
 
                         Text {
                             id: foldersEmpty
+                            anchors.top: parent.top
+                            anchors.topMargin: Theme.settingsChipPadTop
                             width: parent.width
                             height: Theme.settingsRowScanItem
                             verticalAlignment: Text.AlignVCenter
@@ -669,6 +677,8 @@ Window {
                         Flow {
                             id: chipsFlow
                             objectName: "settingsFolderChips"
+                            anchors.top: parent.top
+                            anchors.topMargin: Theme.settingsChipPadTop
                             width: parent.width
                             spacing: Theme.settingsChipGap
                             // Same idiom as the rest of the surface: ask the

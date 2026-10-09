@@ -175,7 +175,12 @@ int main(int argc, char *argv[])
         return ScanService::ScanSettings{ settingsStore.scanRoots(),
                                           settingsStore.scanIntervalMinutes() };
     });
-    scanService.start();                                          // arms interval timer if roots exist (D-09)
+    // D-09: arms the interval timer if roots exist, and normally does NOT scan
+    // (the index loaded above makes relaunch instant). `indexLoaded` is passed
+    // so a REJECTED index — the first launch after an update bumped the index
+    // format — asks for one recovery scan instead of sitting blank until the
+    // timer. See ScanService::start.
+    scanService.start(indexLoaded);
 
     // 2026-08-15 (saved-list on open): the persisted index was loaded above
     // (index.load()) and start() never scans at boot (D-09), so dispatch the

@@ -244,6 +244,14 @@ readonly property int settingsSurfaceHeight: 781  // window − 2x16 shadow marg
     readonly property int settingsChipGap: 6         // chip-to-chip gap, both axes (= settingsScanRowGap)
     readonly property int settingsChipPadH: 10       // horizontal padding inside a chip
     readonly property int settingsChipMaxTextW: 180 // basename elides past this; tooltip carries the full path
+    // Breathing room ABOVE the folders, inside the folders slot (2026-10-09:
+    // chips sat 10px under the "Folders wisp searches…" subtitle and read as
+    // mushed against it). Deliberately padding the slot rather than widening
+    // settingsScanGap: the gap already belongs to the section, whereas this
+    // only pushes the folder list off the subtitle. It is absorbed by the
+    // settingsRowScanFolders budget for a short list, so the window stays
+    // 813px and the section-gap rhythm is untouched.
+    readonly property int settingsChipPadTop: 10
     readonly property int settingsSectionHeader: 32 // section header (18 title + 2 + 12 subtitle)
     // Phase 8 Updates section (header-on-top polish, right-aligned check
     // actions): header(32) + gap(8) + toggle row(28) + gap(4) + check row(40:
