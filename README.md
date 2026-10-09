@@ -1,7 +1,7 @@
+
 <p align="center">
   <img src="assets/icons/wisp-01.png" width="96" alt="wisp icon">
-</p>
-
+</p> 
 <p align="center">
   <a href="https://github.com/ThisIsDara/Wisp/releases/latest"><img src="https://img.shields.io/github/v/release/ThisIsDara/Wisp" alt="Latest release"></a>
   <a href="https://github.com/ThisIsDara/Wisp/releases"><img src="https://img.shields.io/github/downloads/ThisIsDara/Wisp/total" alt="Total downloads"></a>
@@ -9,13 +9,9 @@
   <a href="https://github.com/ThisIsDara"><img src="https://img.shields.io/badge/profile-ThisIsDara-blue?style=flat" alt="Profile: ThisIsDara"></a>
 </p>
 
-# wisp
+# Wisp
 
-An instant app launcher for Windows 10/11. Press `Alt+Space`, type a few
-letters, pick a result, press Enter.
-
-wisp lives in the tray, opens instantly with a global hotkey, and launches
-apps.
+An instant app launcher for Windows 10/11.
 
 ## Features
 
